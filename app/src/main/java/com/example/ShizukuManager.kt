@@ -46,8 +46,8 @@ object ShizukuManager {
     fun isRootAvailable(): Boolean {
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val line = reader.readLine()
+            val line = process.inputStream.bufferedReader().use { it.readLine() }
+            process.errorStream.bufferedReader().use { while (it.readLine() != null) {} }
             process.waitFor()
             line != null && line.contains("uid=0")
         } catch (e: Throwable) {
@@ -184,7 +184,7 @@ object ShizukuManager {
             .putBoolean("sensor_blocked_light", turnOff)
             .apply()
 
-        return executedSuccessfully || true
+        return executedSuccessfully
     }
 
     /**
@@ -237,7 +237,7 @@ object ShizukuManager {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("sensor_blocked_$sensorId", turnOff).apply()
 
-        return executedSuccessfully || true
+        return executedSuccessfully
     }
 
     fun getIndividualSensorState(context: Context, sensorId: String): Boolean {
@@ -431,31 +431,25 @@ object ShizukuManager {
 
     private fun runShizukuCommand(command: String): String {
         return try {
-            val process: Process = try {
-                val m1 = Shizuku::class.java.getDeclaredMethod(
-                    "newProcess",
-                    Array<String>::class.java,
-                    Array<String>::class.java,
-                    String::class.java
-                )
-                m1.isAccessible = true
-                m1.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
-            } catch (e: Exception) {
-                val targetMethod = Shizuku::class.java.declaredMethods.firstOrNull { 
-                    it.name == "newProcess" && it.parameterCount == 3 
-                }
-                if (targetMethod != null) {
-                    targetMethod.isAccessible = true
-                    targetMethod.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
-                } else {
-                    throw e
+            val targetMethod = Shizuku::class.java.declaredMethods.firstOrNull { 
+                it.name == "newProcess" && it.parameterTypes.size == 3 
+            } ?: Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            targetMethod.isAccessible = true
+            val process = targetMethod.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
+            val output = StringBuilder()
+            process.inputStream.bufferedReader().use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    output.append(line).append("\n")
                 }
             }
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val output = StringBuilder()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                output.append(line).append("\n")
+            process.errorStream.bufferedReader().use { reader ->
+                while (reader.readLine() != null) {}
             }
             process.waitFor()
             output.toString()
@@ -468,16 +462,21 @@ object ShizukuManager {
     private fun runRootCommand(command: String): String {
         return try {
             val process = Runtime.getRuntime().exec("su")
-            val os = DataOutputStream(process.outputStream)
-            os.writeBytes("$command\n")
-            os.writeBytes("exit\n")
-            os.flush()
+            DataOutputStream(process.outputStream).use { os ->
+                os.writeBytes("$command\n")
+                os.writeBytes("exit\n")
+                os.flush()
+            }
 
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                output.append(line).append("\n")
+            process.inputStream.bufferedReader().use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    output.append(line).append("\n")
+                }
+            }
+            process.errorStream.bufferedReader().use { reader ->
+                while (reader.readLine() != null) {}
             }
             process.waitFor()
             output.toString()

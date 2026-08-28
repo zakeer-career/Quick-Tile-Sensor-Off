@@ -87,8 +87,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             super.onChange(selfChange)
             val context = getApplication<Application>().applicationContext
             val isOff = ShizukuManager.getSensorsOffState(context)
-            _uiState.update { it.copy(isSensorsOff = isOff) }
-            addLog("Detected system 'sensors_off' change -> SensorsOff = $isOff")
+            addLog("Detected system sensor privacy change -> SensorsOff = $isOff")
+            refreshState()
         }
     }
 
@@ -110,6 +110,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         try {
             context.contentResolver.registerContentObserver(
                 Settings.Global.getUriFor("sensors_off"),
+                false,
+                contentObserver
+            )
+            context.contentResolver.registerContentObserver(
+                Settings.Secure.getUriFor("sensor_privacy"),
                 false,
                 contentObserver
             )
