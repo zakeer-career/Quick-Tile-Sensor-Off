@@ -127,27 +127,38 @@ fun SleekHeader(onRefresh: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text(
-                text = "ENTERPRISE SENSOR PRIVACY",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.accentBlue,
-                letterSpacing = 1.5.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(colors.accentCyan)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "QUANTUM SENSOR PRIVACY",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.accentCyan,
+                    letterSpacing = 1.6.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "SensorsOff",
                 fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
+                fontWeight = FontWeight.Black,
+                color = colors.textPrimary,
+                letterSpacing = (-0.5).sp
             )
         }
 
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(14.dp))
                 .background(colors.cardBg)
-                .border(1.dp, colors.border, CircleShape)
+                .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(14.dp))
                 .clickable { onRefresh() }
                 .testTag("refresh_button"),
             contentAlignment = Alignment.Center
@@ -155,7 +166,7 @@ fun SleekHeader(onRefresh: () -> Unit) {
             Icon(
                 imageVector = Icons.Default.Refresh,
                 contentDescription = "Refresh",
-                tint = colors.textSecondary,
+                tint = colors.accentCyan,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -249,7 +260,7 @@ fun SleekMasterToggleCard(
 ) {
     val colors = LocalAppColors.current
     val buttonBgColor by animateColorAsState(
-        targetValue = if (isSensorsOff) colors.accentRose else colors.accentBlue,
+        targetValue = if (isSensorsOff) colors.accentRose else colors.accentCyan,
         animationSpec = tween(350),
         label = "btnColor"
     )
@@ -260,6 +271,12 @@ fun SleekMasterToggleCard(
             .testTag("master_toggle_card"),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (colors.isDark) {
+                if (isSensorsOff) colors.accentRose.copy(alpha = 0.45f) else colors.glowColor
+            } else colors.border
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -270,27 +287,36 @@ fun SleekMasterToggleCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(150.dp)
+                    .size(156.dp)
                     .padding(bottom = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
+                // Quantum Outer Halo
                 Box(
                     modifier = Modifier
-                        .size(150.dp)
+                        .size(156.dp)
                         .clip(CircleShape)
-                        .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.1f) else colors.accentBlue.copy(alpha = 0.1f))
+                        .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.08f) else colors.accentCyan.copy(alpha = 0.08f))
                 )
+                // Quantum Middle Glow
                 Box(
                     modifier = Modifier
-                        .size(120.dp)
+                        .size(126.dp)
                         .clip(CircleShape)
-                        .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.2f) else colors.accentBlue.copy(alpha = 0.2f))
+                        .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.18f) else colors.accentCyan.copy(alpha = 0.18f))
+                        .border(
+                            1.5.dp,
+                            if (isSensorsOff) colors.accentRose.copy(alpha = 0.35f) else colors.accentCyan.copy(alpha = 0.35f),
+                            CircleShape
+                        )
                 )
+                // Quantum Core Trigger
                 Box(
                     modifier = Modifier
-                        .size(90.dp)
+                        .size(92.dp)
                         .clip(CircleShape)
                         .background(buttonBgColor)
+                        .border(2.dp, Color.White.copy(alpha = 0.4f), CircleShape)
                         .clickable { onToggle() }
                         .testTag("toggle_sensors_button"),
                     contentAlignment = Alignment.Center
@@ -298,10 +324,34 @@ fun SleekMasterToggleCard(
                     Icon(
                         imageVector = if (isSensorsOff) Icons.Default.Shield else Icons.Default.Sensors,
                         contentDescription = "Toggle Sensors",
-                        modifier = Modifier.size(38.dp),
-                        tint = Color.White
+                        modifier = Modifier.size(40.dp),
+                        tint = if (isSensorsOff) Color.White else CyberVoid
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Futuristic Status Badge
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.15f) else colors.accentGreen.copy(alpha = 0.15f))
+                    .border(
+                        1.dp,
+                        if (isSensorsOff) colors.accentRose.copy(alpha = 0.3f) else colors.accentGreen.copy(alpha = 0.3f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isSensorsOff) "[ SENSOR MATRIX BLOCKED ]" else "[ HARDWARE ONLINE ]",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    color = if (isSensorsOff) colors.accentRose else colors.accentGreen,
+                    letterSpacing = 1.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -309,7 +359,7 @@ fun SleekMasterToggleCard(
             Text(
                 text = if (isSensorsOff) "Sensors Disabled" else "Sensors Enabled",
                 fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Black,
                 color = colors.textPrimary,
                 textAlign = TextAlign.Center
             )
@@ -346,7 +396,8 @@ fun SleekStatusGrid(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(colors.softBg)
+                    .background(colors.cardBg)
+                    .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(18.dp))
                     .clickable { onRequestShizuku() }
                     .padding(16.dp)
             ) {
@@ -355,22 +406,22 @@ fun SleekStatusGrid(
                         text = "SHIZUKU PRIVILEGE",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = colors.accentBlue,
-                        letterSpacing = 1.sp
+                        color = colors.accentCyan,
+                        letterSpacing = 1.2.sp
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(if (uiState.isShizukuAuthorized) colors.accentGreen else if (uiState.isShizukuRunning) Amber600 else colors.textMuted)
+                                .background(if (uiState.isShizukuAuthorized) colors.accentGreen else if (uiState.isShizukuRunning) colors.accentAmber else colors.textMuted)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (uiState.isShizukuAuthorized) "Authorized" else if (uiState.isShizukuRunning) "Needs Auth" else "Inactive",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.SemiBold,
                             color = colors.textPrimary
                         )
                     }
@@ -382,7 +433,8 @@ fun SleekStatusGrid(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(colors.softBg)
+                    .background(colors.cardBg)
+                    .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(18.dp))
                     .padding(16.dp)
             ) {
                 Column {
@@ -390,22 +442,22 @@ fun SleekStatusGrid(
                         text = "SYSTEM ENGINE",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = colors.accentBlue,
-                        letterSpacing = 1.sp
+                        color = colors.accentCyan,
+                        letterSpacing = 1.2.sp
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(if (uiState.isRootAvailable || uiState.hasSecureSettingsPermission) colors.accentGreen else Amber600)
+                                .background(if (uiState.isRootAvailable || uiState.hasSecureSettingsPermission) colors.accentGreen else colors.accentAmber)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (uiState.isRootAvailable) "Root SU Ready" else if (uiState.hasSecureSettingsPermission) "ADB Granted" else "Standard",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.SemiBold,
                             color = colors.textPrimary
                         )
                     }
@@ -428,6 +480,7 @@ fun SleekThemeSelectionCard(
             .testTag("theme_selection_card"),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (colors.isDark) colors.glowColor else colors.border),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
@@ -450,20 +503,20 @@ fun SleekThemeSelectionCard(
                     Icon(
                         imageVector = Icons.Default.Palette,
                         contentDescription = "Theme",
-                        tint = colors.accentBlue,
+                        tint = colors.accentCyan,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
                 Column {
                     Text(
-                        text = "App Visual Theme",
+                        text = "Visual Aesthetic",
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = colors.textPrimary
                     )
                     Text(
-                        text = "Dynamic light, dark, or system scheme",
+                        text = "Quantum dark, cyber titanium, or dynamic monet",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -475,19 +528,21 @@ fun SleekThemeSelectionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf(
+                    "dark" to "Cyber Dark",
+                    "light" to "Titanium",
                     "system" to "System",
-                    "light" to "Light",
-                    "dark" to "Dark",
                     "dynamic" to "Monet"
                 ).forEach { (modeKey, modeLabel) ->
                     FilterChip(
                         selected = currentTheme == modeKey,
                         onClick = { onSelectTheme(modeKey) },
-                        label = { Text(modeLabel, fontSize = 11.sp) },
+                        label = { Text(modeLabel, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                         modifier = Modifier.weight(1f),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = colors.accentBlue,
-                            selectedLabelColor = Color.White
+                            selectedContainerColor = colors.accentCyan,
+                            selectedLabelColor = CyberVoid,
+                            containerColor = colors.softBg,
+                            labelColor = colors.textSecondary
                         )
                     )
                 }
@@ -768,13 +823,13 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Amber50),
+                        .background(colors.accentAmber.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Lightbulb,
                         contentDescription = "Tip",
-                        tint = Amber600,
+                        tint = colors.accentAmber,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -824,14 +879,15 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Slate800)
+                            .background(colors.softBg)
+                            .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                             .padding(12.dp)
                     ) {
                         Text(
                             text = uiState.adbGrantCommand,
                             fontSize = 11.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = Blue200
+                            color = colors.accentCyan
                         )
                     }
 
@@ -840,7 +896,7 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
                             clipboardManager.setText(AnnotatedString(uiState.adbGrantCommand))
                             Toast.makeText(context, "ADB command copied!", Toast.LENGTH_SHORT).show()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1082,14 +1138,16 @@ fun SleekLogsTabContent(
                 .fillMaxSize()
                 .padding(bottom = 24.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Slate800)
+                .background(colors.cardBg)
+                .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(20.dp))
                 .padding(16.dp)
         ) {
             if (uiState.logs.isEmpty()) {
                 Text(
-                    text = "No system logs recorded.",
+                    text = "[ SYSTEM TELEMETRY EMPTY ]",
                     fontSize = 12.sp,
-                    color = Slate400
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    color = colors.textMuted
                 )
             } else {
                 LazyColumn(
@@ -1100,7 +1158,7 @@ fun SleekLogsTabContent(
                             text = log,
                             fontSize = 12.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = if (log.contains("Error")) Rose500 else Blue200
+                            color = if (log.contains("Error") || log.contains("DENIED")) colors.accentRose else colors.accentCyan
                         )
                     }
                 }
@@ -1111,11 +1169,12 @@ fun SleekLogsTabContent(
 
 @Composable
 fun SensorsOffBrandLogo(modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(22.dp))
-            .background(Color(0xFF0B1120))
-            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f), RoundedCornerShape(22.dp)),
+            .background(colors.cardBg)
+            .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(22.dp)),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -1192,7 +1251,7 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
                         text = "DEVICE & ENVIRONMENT METRICS",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = colors.accentBlue,
+                        color = colors.accentCyan,
                         letterSpacing = 1.2.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1212,11 +1271,12 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (colors.isDark) colors.glowColor else colors.border),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "ENTERPRISE SECURITY GUARANTEE",
+                        text = "SECURITY & ISOLATION GUARANTEE",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.accentGreen,
@@ -1258,8 +1318,8 @@ fun SleekNavigationBar(
     val colors = LocalAppColors.current
     Surface(
         color = colors.cardBg,
-        tonalElevation = 4.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border)
+        tonalElevation = 6.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (colors.isDark) colors.glowColor else colors.border)
     ) {
         Row(
             modifier = Modifier
@@ -1271,19 +1331,19 @@ fun SleekNavigationBar(
         ) {
             SleekNavItem(
                 icon = Icons.Default.Home,
-                label = "Home",
+                label = "Matrix",
                 isSelected = selectedTab == SleekTab.HOME,
                 onClick = { onTabSelected(SleekTab.HOME) }
             )
             SleekNavItem(
                 icon = Icons.Default.ListAlt,
-                label = "Logs",
+                label = "Telemetry",
                 isSelected = selectedTab == SleekTab.LOGS,
                 onClick = { onTabSelected(SleekTab.LOGS) }
             )
             SleekNavItem(
                 icon = Icons.Default.Info,
-                label = "About",
+                label = "System",
                 isSelected = selectedTab == SleekTab.ABOUT,
                 onClick = { onTabSelected(SleekTab.ABOUT) }
             )
@@ -1308,14 +1368,14 @@ fun SleekNavItem(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (isSelected) colors.accentBlue else colors.textMuted,
+            tint = if (isSelected) colors.accentCyan else colors.textMuted,
             modifier = Modifier.size(22.dp)
         )
         Text(
             text = label,
             fontSize = 11.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            color = if (isSelected) colors.accentBlue else colors.textMuted
+            color = if (isSelected) colors.accentCyan else colors.textMuted
         )
     }
 }

@@ -21,56 +21,80 @@ data class AppColors(
     val textPrimary: Color,
     val textSecondary: Color,
     val textMuted: Color,
-    val accentBlue: Color,
+    val accentBlue: Color, // Mapped to NeonCyan in dark / DeepCyan in light
+    val accentCyan: Color,
+    val accentPurple: Color,
     val accentRose: Color,
     val accentGreen: Color,
+    val accentAmber: Color,
+    val glowColor: Color,
     val isDark: Boolean
 )
 
-val LightAppColors = AppColors(
-    bg = Color(0xFFF7F9FC),
-    cardBg = Color(0xFFFFFFFF),
-    softBg = Color(0xFFF0F2F9),
-    border = Color(0xFFE2E8F0),
-    textPrimary = Color(0xFF1E293B),
-    textSecondary = Color(0xFF475569),
-    textMuted = Color(0xFF94A3B8),
-    accentBlue = Color(0xFF2563EB),
-    accentRose = Color(0xFFE11D48),
-    accentGreen = Color(0xFF22C55E),
-    isDark = false
-)
-
-val DarkAppColors = AppColors(
-    bg = Color(0xFF0F172A),
-    cardBg = Color(0xFF1E293B),
-    softBg = Color(0xFF334155),
-    border = Color(0xFF334155),
-    textPrimary = Color(0xFFF8FAFC),
-    textSecondary = Color(0xFFCBD5E1),
-    textMuted = Color(0xFF64748B),
-    accentBlue = Color(0xFF3B82F6),
-    accentRose = Color(0xFFF43F5E),
-    accentGreen = Color(0xFF4ADE80),
+val FuturisticDarkAppColors = AppColors(
+    bg = CyberVoid,
+    cardBg = CyberDarkCard,
+    softBg = CyberSoftCard,
+    border = CyberBorder,
+    textPrimary = NeonWhite,
+    textSecondary = SlateSilver,
+    textMuted = SlateDeep,
+    accentBlue = NeonCyan,
+    accentCyan = NeonCyan,
+    accentPurple = HoloViolet,
+    accentRose = LaserCrimson,
+    accentGreen = PlasmaGreen,
+    accentAmber = SolarAmber,
+    glowColor = CyberBorderGlow,
     isDark = true
 )
 
-val LocalAppColors = staticCompositionLocalOf { LightAppColors }
+val FuturisticLightAppColors = AppColors(
+    bg = TitaniumBg,
+    cardBg = TitaniumCard,
+    softBg = TitaniumSoft,
+    border = TitaniumBorder,
+    textPrimary = TitaniumTextPrimary,
+    textSecondary = TitaniumTextSecondary,
+    textMuted = TitaniumTextMuted,
+    accentBlue = DeepCyan,
+    accentCyan = DeepCyan,
+    accentPurple = ElectricIndigo,
+    accentRose = LaserCrimson,
+    accentGreen = CyberEmerald,
+    accentAmber = SolarAmber,
+    glowColor = Color(0x3300C4D6),
+    isDark = false
+)
+
+val LocalAppColors = staticCompositionLocalOf { FuturisticDarkAppColors }
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Blue500,
-    secondary = Blue200,
-    tertiary = Rose500,
-    background = Color(0xFF0F172A),
-    surface = Color(0xFF1E293B)
+    primary = NeonCyan,
+    secondary = HoloViolet,
+    tertiary = LaserCrimson,
+    background = CyberVoid,
+    surface = CyberDarkCard,
+    surfaceVariant = CyberSoftCard,
+    onPrimary = CyberVoid,
+    onSecondary = Color.White,
+    onBackground = NeonWhite,
+    onSurface = NeonWhite,
+    outline = CyberBorder
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Blue600,
-    secondary = Blue500,
-    tertiary = Rose600,
-    background = Color(0xFFF7F9FC),
-    surface = Color(0xFFFFFFFF)
+    primary = DeepCyan,
+    secondary = ElectricIndigo,
+    tertiary = LaserCrimson,
+    background = TitaniumBg,
+    surface = TitaniumCard,
+    surfaceVariant = TitaniumSoft,
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onBackground = TitaniumTextPrimary,
+    onSurface = TitaniumTextPrimary,
+    outline = TitaniumBorder
 )
 
 @Composable
@@ -106,14 +130,18 @@ fun MyApplicationTheme(
             textSecondary = colorScheme.onSurfaceVariant,
             textMuted = colorScheme.outline,
             accentBlue = colorScheme.primary,
-            accentRose = Rose600,
-            accentGreen = Green500,
+            accentCyan = colorScheme.primary,
+            accentPurple = colorScheme.secondary,
+            accentRose = LaserCrimson,
+            accentGreen = PlasmaGreen,
+            accentAmber = SolarAmber,
+            glowColor = colorScheme.primary.copy(alpha = 0.25f),
             isDark = isDark
         )
     } else if (isDark) {
-        DarkAppColors
+        FuturisticDarkAppColors
     } else {
-        LightAppColors
+        FuturisticLightAppColors
     }
 
     CompositionLocalProvider(LocalAppColors provides appColors) {

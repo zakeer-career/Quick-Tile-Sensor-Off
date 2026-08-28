@@ -5,46 +5,47 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Enterprise Proportioned Safe Area: Centered at (54, 54), ~48dp scale -->
-    
-    <!-- Outer Shield Left Facet (Light Cyan/Sky Blue) -->
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M54,30 L32,38.5 C32,38.5 32,55.5 32,56.5 C32,70.5 41.5,82.5 54,87 L54,30 Z" />
+    <group
+        android:scaleX="2.4"
+        android:scaleY="2.4"
+        android:translateX="25.2"
+        android:translateY="25.2">
 
-    <!-- Outer Shield Right Facet (Deep Enterprise Royal Blue) -->
-    <path
-        android:fillColor="#0284C7"
-        android:pathData="M54,30 L76,38.5 C76,38.5 76,55.5 76,56.5 C76,70.5 66.5,82.5 54,87 L54,30 Z" />
+        <!-- Outer Neon Cyan Glow Halo for Waveform -->
+        <path
+            android:strokeColor="#3300F5FF"
+            android:strokeWidth="4.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M0.752,12L4.496,12l2.496,-6.25 2.496,12.5 2.496,-15 2.496,12.5 2.496,-7.5 1.248,3.75h4.992" />
 
-    <!-- Inner Shield Cavity (Titanium Dark Slate) -->
-    <path
-        android:fillColor="#0B132B"
-        android:pathData="M54,35 L36.5,41.8 C36.5,41.8 36.5,55.5 36.5,56.3 C36.5,67.5 44,77.5 54,81.5 C64,77.5 71.5,67.5 71.5,56.3 C71.5,55.5 71.5,41.8 71.5,41.8 L54,35 Z" />
+        <!-- High-Intensity Neon Cyan Telemetry Waveform -->
+        <path
+            android:strokeColor="#00F5FF"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M0.752,12L4.496,12l2.496,-6.25 2.496,12.5 2.496,-15 2.496,12.5 2.496,-7.5 1.248,3.75h4.992" />
 
-    <!-- Precision Sensor Aperture / Toggle Capsule -->
-    <path
-        android:fillColor="#1E293B"
-        android:strokeColor="#38BDF8"
-        android:strokeWidth="1.2"
-        android:pathData="M46,50 H62 C64.2,50 66,51.8 66,54 C66,56.2 64.2,58 62,58 H46 C43.8,58 42,56.2 42,54 C42,51.8 43.8,50 46,50 Z" />
+        <!-- Strike Slash Laser Glow Base -->
+        <path
+            android:strokeColor="#030712"
+            android:strokeWidth="5.0"
+            android:strokeLineCap="round"
+            android:pathData="M21.966,2 L2,22" />
 
-    <!-- Core Sensor Node Indicator -->
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M48.5,54m-2.8,0a2.8,2.8 0,1 1,5.6 0a2.8,2.8 0,1 1,-5.6 0" />
+        <!-- Strike Slash Quantum Purple/Cyan Underglow -->
+        <path
+            android:strokeColor="#A855F7"
+            android:strokeWidth="3.2"
+            android:strokeLineCap="round"
+            android:pathData="M21.966,2 L2,22" />
 
-    <!-- Outer Knockout Slash (Background color to create crisp separation) -->
-    <path
-        android:strokeColor="#0B132B"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round"
-        android:pathData="M73,33 L35,85" />
-
-    <!-- Enterprise Security Slash (High Precision Bright Stroke) -->
-    <path
-        android:strokeColor="#F0F9FF"
-        android:strokeWidth="2.2"
-        android:strokeLineCap="round"
-        android:pathData="M73,33 L35,85" />
+        <!-- Pure Laser Beam Center -->
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="1.8"
+            android:strokeLineCap="round"
+            android:pathData="M21.966,2 L2,22" />
+    </group>
 </vector>

@@ -5,21 +5,25 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M54,30 L32,38.5 C32,38.5 32,55.5 32,56.5 C32,70.5 41.5,82.5 54,87 C66.5,82.5 76,70.5 76,56.5 C76,55.5 76,38.5 76,38.5 L54,30 Z M54,35 L71.5,41.8 C71.5,41.8 71.5,55.5 71.5,56.3 C71.5,67.5 64,77.5 54,81.5 C44,77.5 36.5,67.5 36.5,56.3 C36.5,55.5 36.5,41.8 36.5,41.8 L54,35 Z" />
+    <group
+        android:scaleX="2.5"
+        android:scaleY="2.5"
+        android:translateX="24"
+        android:translateY="24">
 
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M46,50 H62 C64.2,50 66,51.8 66,54 C66,56.2 64.2,58 62,58 H46 C43.8,58 42,56.2 42,54 C42,51.8 43.8,50 46,50 Z M62,56 C63.1,56 64,55.1 64,54 C64,52.9 63.1,52 62,52 H46 C44.9,52 44,52.9 44,54 C44,55.1 44.9,56 46,56 H62 Z" />
+        <!-- Official AOSP Telemetry Waveform -->
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M0.752,12L4.496,12l2.496,-6.25 2.496,12.5 2.496,-15 2.496,12.5 2.496,-7.5 1.248,3.75h4.992" />
 
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M48.5,54m-2.8,0a2.8,2.8 0,1 1,5.6 0a2.8,2.8 0,1 1,-5.6 0" />
-
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M73,33 L35,85" />
+        <!-- Official AOSP Diagonal Strike Slash -->
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M21.966,2 L2,22" />
+    </group>
 </vector>

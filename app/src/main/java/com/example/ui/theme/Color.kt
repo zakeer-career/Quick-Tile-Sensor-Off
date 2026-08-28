@@ -2,42 +2,46 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val SleekBg = Color(0xFFF7F9FC)
-val SleekCardBg = Color(0xFFFFFFFF)
-val SleekSoftBg = Color(0xFFF0F2F9)
-val SleekBorder = Color(0xFFE2E8F0)
+// Futuristic Cyberpunk / Quantum Obsidian Palette
+val CyberVoid = Color(0xFF030712)
+val CyberDarkCard = Color(0xFF070E22)
+val CyberSoftCard = Color(0xFF0E1A38)
+val CyberBorder = Color(0xFF1E2D54)
+val CyberBorderGlow = Color(0x4000F5FF)
 
-val Slate800 = Color(0xFF1E293B)
-val Slate900 = Color(0xFF0F172A)
-val Slate700 = Color(0xFF334155)
-val Slate600 = Color(0xFF475569)
-val Slate500 = Color(0xFF64748B)
-val Slate400 = Color(0xFF94A3B8)
-val Slate100 = Color(0xFFF1F5F9)
+// Neon & Quantum Energy Accents
+val NeonCyan = Color(0xFF00F5FF)
+val NeonCyanDim = Color(0xFF00C4D6)
+val NeonCyanSoft = Color(0x2600F5FF)
+val ElectricBlue = Color(0xFF38BDF8)
+val DeepCyan = Color(0xFF0284C7)
 
-val Blue600 = Color(0xFF2563EB)
-val Blue500 = Color(0xFF3B82F6)
-val Blue200 = Color(0xFFBFDBFE)
-val Blue100 = Color(0xFFDBEAFE)
-val Blue50 = Color(0xFFEFF6FF)
+val LaserCrimson = Color(0xFFFF0055)
+val LaserRose = Color(0xFFF43F5E)
+val LaserCrimsonSoft = Color(0x26FF0055)
 
-val Rose600 = Color(0xFFE11D48)
-val Rose500 = Color(0xFFF43F5E)
-val Rose100 = Color(0xFFFFE4E6)
-val Rose50 = Color(0xFFFFF1F2)
+val PlasmaGreen = Color(0xFF00FF9D)
+val CyberEmerald = Color(0xFF10B981)
+val PlasmaGreenSoft = Color(0x2600FF9D)
 
-val Green500 = Color(0xFF22C55E)
-val Green100 = Color(0xFFDCFCE7)
-val Green50 = Color(0xFFF0FDF4)
+val HoloViolet = Color(0xFFA855F7)
+val ElectricIndigo = Color(0xFF8B5CF6)
+val HoloVioletSoft = Color(0x26A855F7)
 
-val Amber600 = Color(0xFFD97706)
-val Amber50 = Color(0xFFFFFBEB)
+val SolarAmber = Color(0xFFFFB800)
+val SolarAmberSoft = Color(0x26FFB800)
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Futuristic Text Hierarchy
+val NeonWhite = Color(0xFFF8FAFC)
+val SlateSilver = Color(0xFF94A3B8)
+val SlateDeep = Color(0xFF475569)
+val CyberMuted = Color(0xFF334155)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
-
+// Futuristic Light Mode (Titanium / Clean Cyber Hologram)
+val TitaniumBg = Color(0xFFF0F4FC)
+val TitaniumCard = Color(0xFFFFFFFF)
+val TitaniumSoft = Color(0xFFE2E8F8)
+val TitaniumBorder = Color(0xFFCBD5E1)
+val TitaniumTextPrimary = Color(0xFF0A1024)
+val TitaniumTextSecondary = Color(0xFF334155)
+val TitaniumTextMuted = Color(0xFF64748B)
