@@ -1,17 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Centered vector shield icon scaled safely inside 108dp viewport -->
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M54,26 L32,36 L32,58 C32,72.5 41.5,85.5 54,89 C66.5,85.5 76,72.5 76,58 L76,36 L54,26 Z M54,34 C64,34 68,43 68,58 C68,69 61,78 54,81 C47,78 40,69 40,58 C40,43 44,34 54,34 Z" />
-    <path
-        android:fillColor="#F43F5E"
-        android:pathData="M38,38 L70,70"
-        android:strokeWidth="6"
-        android:strokeColor="#F43F5E"
-        android:strokeLineCap="round" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="72dp"
+        android:height="72dp"
+        android:drawable="@drawable/sensors_off_logo_1785837915644"
+        android:gravity="center" />
+</layer-list>

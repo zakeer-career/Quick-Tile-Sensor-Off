@@ -95,7 +95,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     init {
         val context = application.applicationContext
         refreshState()
-        addLog("Ultra Private initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
+        addLog("SensorsOff initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
 
         // Register Shizuku listeners
         try {

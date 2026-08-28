@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Ultra private"
+rootProject.name = "SensorsOff"
 
 include(":app")

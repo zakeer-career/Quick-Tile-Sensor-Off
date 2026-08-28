@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Ultra private</string>
+    <string name="app_name">SensorsOff</string>
     <string name="tile_label">Sensors Off</string>
     <string name="tile_description">Toggle device sensors on or off</string>
     <string name="shizuku_not_installed">Shizuku is not installed or running</string>

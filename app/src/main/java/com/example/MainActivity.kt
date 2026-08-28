@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -100,7 +101,7 @@ fun SensorsOffSleekApp(viewModel: SensorViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Header
+            // Enterprise Header
             SleekHeader(
                 onRefresh = { viewModel.refreshState() }
             )
@@ -121,20 +122,20 @@ fun SleekHeader(onRefresh: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 24.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
             Text(
-                text = "SYSTEM UTILITY",
-                fontSize = 11.sp,
+                text = "ENTERPRISE SENSOR PRIVACY",
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = colors.textMuted,
+                color = colors.accentBlue,
                 letterSpacing = 1.5.sp
             )
             Text(
-                text = "Ultra Private",
+                text = "SensorsOff",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.textPrimary
@@ -172,7 +173,7 @@ fun SleekHomeTabContent(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         // Master Toggle Card
@@ -183,7 +184,7 @@ fun SleekHomeTabContent(
             )
         }
 
-        // Status Grid
+        // Status Grid (Shizuku & Root)
         item {
             SleekStatusGrid(
                 uiState = uiState,
@@ -200,14 +201,6 @@ fun SleekHomeTabContent(
             )
         }
 
-        // Launcher App Icon Masking / Discrete Branding Card
-        item {
-            SleekDiscreteBrandingCard(
-                currentAlias = uiState.appLauncherAlias,
-                onSelectAlias = { viewModel.updateAppLauncherAlias(it) }
-            )
-        }
-
         // Quick Settings Tile Preferences Card
         item {
             SleekTileCustomizationCard(
@@ -221,7 +214,7 @@ fun SleekHomeTabContent(
             )
         }
 
-        // Quick Settings Tile Setup Tip
+        // Quick Settings Tile Setup Guide
         item {
             SleekQuickTileTipCard(uiState = uiState)
         }
@@ -234,7 +227,7 @@ fun SleekHomeTabContent(
                 fontWeight = FontWeight.Bold,
                 color = colors.textMuted,
                 letterSpacing = 1.2.sp,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 
@@ -257,7 +250,7 @@ fun SleekMasterToggleCard(
     val colors = LocalAppColors.current
     val buttonBgColor by animateColorAsState(
         targetValue = if (isSensorsOff) colors.accentRose else colors.accentBlue,
-        animationSpec = tween(400),
+        animationSpec = tween(350),
         label = "btnColor"
     )
 
@@ -265,37 +258,37 @@ fun SleekMasterToggleCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("master_toggle_card"),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = colors.cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(32.dp),
+                .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(160.dp)
-                    .padding(bottom = 8.dp),
+                    .size(150.dp)
+                    .padding(bottom = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .size(160.dp)
+                        .size(150.dp)
                         .clip(CircleShape)
                         .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.1f) else colors.accentBlue.copy(alpha = 0.1f))
                 )
                 Box(
                     modifier = Modifier
-                        .size(128.dp)
+                        .size(120.dp)
                         .clip(CircleShape)
                         .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.2f) else colors.accentBlue.copy(alpha = 0.2f))
                 )
                 Box(
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(90.dp)
                         .clip(CircleShape)
                         .background(buttonBgColor)
                         .clickable { onToggle() }
@@ -305,7 +298,7 @@ fun SleekMasterToggleCard(
                     Icon(
                         imageVector = if (isSensorsOff) Icons.Default.Shield else Icons.Default.Sensors,
                         contentDescription = "Toggle Sensors",
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier.size(38.dp),
                         tint = Color.White
                     )
                 }
@@ -352,14 +345,14 @@ fun SleekStatusGrid(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(colors.softBg)
                     .clickable { onRequestShizuku() }
                     .padding(16.dp)
             ) {
                 Column {
                     Text(
-                        text = "SHIZUKU STATUS",
+                        text = "SHIZUKU PRIVILEGE",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.accentBlue,
@@ -388,13 +381,13 @@ fun SleekStatusGrid(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(colors.softBg)
                     .padding(16.dp)
             ) {
                 Column {
                     Text(
-                        text = "ROOT / SECURE SETTINGS",
+                        text = "SYSTEM ENGINE",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.accentBlue,
@@ -410,7 +403,7 @@ fun SleekStatusGrid(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (uiState.isRootAvailable) "Root SU Granted" else if (uiState.hasSecureSettingsPermission) "Granted via ADB" else "Pending Grant",
+                            text = if (uiState.isRootAvailable) "Root SU Ready" else if (uiState.hasSecureSettingsPermission) "ADB Granted" else "Standard",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = colors.textPrimary
@@ -470,7 +463,7 @@ fun SleekThemeSelectionCard(
                         color = colors.textPrimary
                     )
                     Text(
-                        text = "Choose dynamic light, dark, or system scheme",
+                        text = "Dynamic light, dark, or system scheme",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -497,98 +490,6 @@ fun SleekThemeSelectionCard(
                             selectedLabelColor = Color.White
                         )
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SleekDiscreteBrandingCard(
-    currentAlias: String,
-    onSelectAlias: (String) -> Unit
-) {
-    val colors = LocalAppColors.current
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("discrete_branding_card"),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.cardBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(colors.softBg),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.VisibilityOff,
-                        contentDescription = "Discreet Masking",
-                        tint = colors.accentBlue,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Launcher App Icon Masking",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.textPrimary
-                    )
-                    Text(
-                        text = "Mask launcher title for extra stealth & discretion",
-                        fontSize = 12.sp,
-                        color = colors.textSecondary
-                    )
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(
-                    "MainActivityDefault" to "Ultra Private (Default)",
-                    "MainActivityMinimal" to "Privacy Engine",
-                    "MainActivityDiscrete" to "System Utility"
-                ).forEach { (aliasKey, aliasLabel) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (currentAlias == aliasKey) colors.softBg else Color.Transparent)
-                            .clickable { onSelectAlias(aliasKey) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = aliasLabel,
-                            fontSize = 13.sp,
-                            fontWeight = if (currentAlias == aliasKey) FontWeight.Bold else FontWeight.Medium,
-                            color = if (currentAlias == aliasKey) colors.accentBlue else colors.textPrimary
-                        )
-                        if (currentAlias == aliasKey) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Selected",
-                                tint = colors.accentBlue,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -843,6 +744,7 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
     val colors = LocalAppColors.current
     var isExpanded by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier
@@ -879,13 +781,13 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Quick Settings Tile & Setup",
+                        text = "Quick Settings Tile & ADB Guide",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.textPrimary
                     )
                     Text(
-                        text = "Instructions for adding tile & optional ADB permission",
+                        text = "Adding QS tile and granting secure settings permission",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -903,17 +805,16 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
                     modifier = Modifier.padding(top = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    SleekStepRow(step = "1", text = "Swipe down twice from top status bar to reveal full Quick Settings panel.")
-                    SleekStepRow(step = "2", text = "Tap the Pencil / Edit icon at bottom of Quick Settings panel.")
-                    SleekStepRow(step = "3", text = "Locate 'Sensors Off' under Available Tiles and drag to active area.")
-                    SleekStepRow(step = "4", text = "Toggle sensor privacy instantly anytime with a single tap!")
+                    SleekStepRow(step = "1", text = "Swipe down twice from top status bar to open Quick Settings.")
+                    SleekStepRow(step = "2", text = "Tap the Edit (Pencil) button at the bottom.")
+                    SleekStepRow(step = "3", text = "Find 'Sensors Off' in Available Tiles and drag to your active tiles.")
+                    SleekStepRow(step = "4", text = "Tap the tile anytime to toggle hardware sensor privacy.")
 
                     Spacer(modifier = Modifier.height(4.dp))
-
                     HorizontalDivider(color = colors.border)
 
                     Text(
-                        text = "ADB Setup (No Root / No Shizuku Fallback)",
+                        text = "ADB Permission Setup (Optional for Non-Root / Non-Shizuku):",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.textPrimary
@@ -937,6 +838,7 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
                     Button(
                         onClick = {
                             clipboardManager.setText(AnnotatedString(uiState.adbGrantCommand))
+                            Toast.makeText(context, "ADB command copied!", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
                         shape = RoundedCornerShape(12.dp),
@@ -1098,7 +1000,7 @@ fun SleekLogsTabContent(
                     os.write(logsText.toByteArray())
                 }
                 Toast.makeText(context, "Logs exported successfully!", Toast.LENGTH_SHORT).show()
-                viewModel.addLog("Exported logs to file: $it")
+                viewModel.addLog("Exported logs to file.")
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to export logs: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -1131,7 +1033,7 @@ fun SleekLogsTabContent(
                     if (logsText.isNotBlank()) {
                         clipboardManager.setText(AnnotatedString(logsText))
                         Toast.makeText(context, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show()
-                        viewModel.addLog("Copied logs console to system clipboard.")
+                        viewModel.addLog("Copied logs console to clipboard.")
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -1148,7 +1050,7 @@ fun SleekLogsTabContent(
             Button(
                 onClick = {
                     val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-                    createDocumentLauncher.launch("ultra_private_logs_$timeStamp.txt")
+                    createDocumentLauncher.launch("sensorsoff_logs_$timeStamp.txt")
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
@@ -1208,6 +1110,23 @@ fun SleekLogsTabContent(
 }
 
 @Composable
+fun SensorsOffBrandLogo(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF0F172A)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(id = R.drawable.ic_sensors_off_brand),
+            contentDescription = "SensorsOff Logo",
+            tint = Color.Unspecified,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Composable
 fun SleekAboutTabContent(uiState: SensorUiState) {
     val colors = LocalAppColors.current
 
@@ -1229,33 +1148,29 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.sensors_off_logo_1785837915644),
-                        contentDescription = "SensorsOff Logo",
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                    SensorsOffBrandLogo(
+                        modifier = Modifier.size(76.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
-                        text = "Ultra Private (SensorsOff Engine)",
-                        fontSize = 18.sp,
+                        text = "SensorsOff",
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.textPrimary
                     )
 
                     Text(
-                        text = "Version 1.4 (Kotlin Jetpack Compose)",
+                        text = "Version 1.4.0 (Enterprise Privacy Engine)",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
-                        text = "SensorsOff brings back the native Android Quick Settings sensor block tile for custom ROMs, Xiaomi HyperOS/MIUI, and modern devices.",
+                        text = "SensorsOff restores the native Android Quick Settings sensor block tile for custom ROMs, HyperOS/MIUI, and modern devices via Shizuku & Root SU integration.",
                         fontSize = 13.sp,
                         color = colors.textSecondary,
                         textAlign = TextAlign.Center
@@ -1273,7 +1188,7 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "DEVICE METRICS",
+                        text = "DEVICE & ENVIRONMENT METRICS",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.accentBlue,
@@ -1281,11 +1196,39 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    SleekInfoRow(label = "Manufacturer", value = uiState.deviceManufacturer)
-                    SleekInfoRow(label = "Device Model", value = uiState.deviceModel)
-                    SleekInfoRow(label = "Android Release", value = uiState.androidVersion)
-                    SleekInfoRow(label = "Shizuku Integration", value = if (uiState.isShizukuAuthorized) "Authorized" else "Not Ready")
-                    SleekInfoRow(label = "Root SU Access", value = if (uiState.isRootAvailable) "Available" else "Not Found")
+                    SleekInfoRow(label = "Manufacturer", value = uiState.deviceManufacturer.ifBlank { "Standard" })
+                    SleekInfoRow(label = "Device Model", value = uiState.deviceModel.ifBlank { "Android Device" })
+                    SleekInfoRow(label = "Android Release", value = "Android ${uiState.androidVersion}")
+                    SleekInfoRow(label = "Shizuku Integration", value = if (uiState.isShizukuAuthorized) "Authorized (Active)" else "Inactive")
+                    SleekInfoRow(label = "Root Privileges", value = if (uiState.isRootAvailable) "Granted" else "None")
+                    SleekInfoRow(label = "Hardware Privacy State", value = if (uiState.isSensorsOff) "Privacy Mode Active" else "Sensors Enabled")
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "ENTERPRISE SECURITY GUARANTEE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.accentGreen,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "• 100% On-Device execution with zero network telemetry or tracking.\n• Direct system IPC hook into Android SensorPrivacyService.\n• Zero telemetry, zero analytics, open privacy architecture.",
+                        fontSize = 12.sp,
+                        color = colors.textSecondary,
+                        lineHeight = 18.sp
+                    )
                 }
             }
         }

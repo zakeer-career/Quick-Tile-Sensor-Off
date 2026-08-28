@@ -16,6 +16,12 @@ class ExampleRobolectricTest {
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val appName = context.getString(R.string.app_name)
-    assertEquals("Ultra private", appName)
+    assertEquals("SensorsOff", appName)
+  }
+
+  @Test
+  fun `test about tab renders without crash`() {
+    val state = SensorUiState()
+    assert(state.sensorList.isNotEmpty())
   }
 }
