@@ -1113,15 +1113,18 @@ fun SleekLogsTabContent(
 fun SensorsOffBrandLogo(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF0F172A)),
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color(0xFF0F172A))
+            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), RoundedCornerShape(22.dp)),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            painter = painterResource(id = R.drawable.ic_sensors_off_brand),
+        Image(
+            painter = painterResource(id = R.drawable.sensors_off_logo),
             contentDescription = "SensorsOff Logo",
-            tint = Color.Unspecified,
-            modifier = Modifier.fillMaxSize()
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(22.dp))
         )
     }
 }

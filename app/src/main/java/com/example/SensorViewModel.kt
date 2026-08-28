@@ -9,6 +9,7 @@ import android.os.Looper
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,32 +95,36 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         val context = application.applicationContext
-        refreshState()
         addLog("SensorsOff initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
 
-        // Register Shizuku listeners
-        try {
-            Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-            Shizuku.addBinderDeadListener(binderDeadListener)
-            Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-        } catch (e: Throwable) {
-            addLog("Shizuku listener note: ${e.message}")
-        }
+        // Asynchronously load states and setup listeners without blocking Main Thread startup
+        viewModelScope.launch(Dispatchers.IO) {
+            refreshState()
 
-        // Register ContentObserver to track real-time global settings changes
-        try {
-            context.contentResolver.registerContentObserver(
-                Settings.Global.getUriFor("sensors_off"),
-                false,
-                contentObserver
-            )
-            context.contentResolver.registerContentObserver(
-                Settings.Secure.getUriFor("sensor_privacy"),
-                false,
-                contentObserver
-            )
-        } catch (e: Throwable) {
-            // Observer fail safe
+            // Register Shizuku listeners
+            try {
+                Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+                Shizuku.addBinderDeadListener(binderDeadListener)
+                Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+            } catch (e: Throwable) {
+                addLog("Shizuku listener note: ${e.message}")
+            }
+
+            // Register ContentObserver to track real-time global settings changes
+            try {
+                context.contentResolver.registerContentObserver(
+                    Settings.Global.getUriFor("sensors_off"),
+                    false,
+                    contentObserver
+                )
+                context.contentResolver.registerContentObserver(
+                    Settings.Secure.getUriFor("sensor_privacy"),
+                    false,
+                    contentObserver
+                )
+            } catch (e: Throwable) {
+                // Observer fail safe
+            }
         }
     }
 
@@ -137,16 +142,18 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun checkAndRequestShizukuPermission() {
-        val isRunning = ShizukuManager.isShizukuRunning()
-        val isAuthorized = ShizukuManager.isShizukuAuthorized()
-        if (isRunning && !isAuthorized) {
-            addLog("Shizuku detected: Requesting authorization...")
-            ShizukuManager.requestShizukuPermission()
+        viewModelScope.launch(Dispatchers.IO) {
+            val isRunning = ShizukuManager.isShizukuRunning()
+            val isAuthorized = ShizukuManager.isShizukuAuthorized()
+            if (isRunning && !isAuthorized) {
+                addLog("Shizuku detected: Requesting authorization...")
+                ShizukuManager.requestShizukuPermission()
+            }
         }
     }
 
     fun refreshState() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val context = getApplication<Application>().applicationContext
             val isInstalled = ShizukuManager.isShizukuInstalled(context)
             val isRunning = ShizukuManager.isShizukuRunning()

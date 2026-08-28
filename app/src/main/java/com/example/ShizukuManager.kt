@@ -43,14 +43,42 @@ object ShizukuManager {
         }
     }
 
+    @Volatile
+    private var cachedRootAvailable: Boolean? = null
+
     fun isRootAvailable(): Boolean {
+        cachedRootAvailable?.let { return it }
+        val hasSuBinary = try {
+            val paths = arrayOf(
+                "/system/bin/su",
+                "/system/xbin/su",
+                "/sbin/su",
+                "/system/sd/xbin/su",
+                "/system/bin/failsafe/su",
+                "/data/local/xbin/su",
+                "/data/local/bin/su",
+                "/data/local/su"
+            )
+            paths.any { java.io.File(it).exists() }
+        } catch (e: Throwable) {
+            false
+        }
+
+        if (!hasSuBinary) {
+            cachedRootAvailable = false
+            return false
+        }
+
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             val line = process.inputStream.bufferedReader().use { it.readLine() }
             process.errorStream.bufferedReader().use { while (it.readLine() != null) {} }
             process.waitFor()
-            line != null && line.contains("uid=0")
+            val available = line != null && line.contains("uid=0")
+            cachedRootAvailable = available
+            available
         } catch (e: Throwable) {
+            cachedRootAvailable = false
             false
         }
     }

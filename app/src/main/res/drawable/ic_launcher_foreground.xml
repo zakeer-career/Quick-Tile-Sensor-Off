@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="72dp"
-        android:height="72dp"
-        android:drawable="@drawable/sensors_off_logo_1785837915644"
+        android:width="76dp"
+        android:height="76dp"
+        android:drawable="@drawable/sensors_off_logo"
         android:gravity="center" />
 </layer-list>
