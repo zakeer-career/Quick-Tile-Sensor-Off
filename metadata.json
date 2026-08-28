@@ -1,0 +1,8 @@
+{
+  "name": "Remix SensorsOff from z001",
+  "description": "Restore and toggle the SensorsOff quick settings tile with Shizuku support for device sensor privacy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
