@@ -29,8 +29,8 @@ data class SensorItem(
 data class TileSettingsState(
     val iconStyle: String = "stock", // "stock", "shield", "camera_off", "mic_off", "motion_off", "aosp", "custom"
     val customLabel: String = "Sensors Off",
-    val activeSubtitle: String = "Sensors Disabled",
-    val disabledSubtitle: String = "Sensors Enabled",
+    val activeSubtitle: String = "",
+    val disabledSubtitle: String = "",
     val blockMode: String = "global", // "global" or "cam_mic"
     val customIconPath: String? = null
 )

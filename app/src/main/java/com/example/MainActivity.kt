@@ -1114,17 +1114,15 @@ fun SensorsOffBrandLogo(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(22.dp))
-            .background(Color(0xFF0F172A))
-            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), RoundedCornerShape(22.dp)),
+            .background(Color(0xFF0B1120))
+            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f), RoundedCornerShape(22.dp)),
         contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.sensors_off_logo),
+        Icon(
+            painter = painterResource(id = R.drawable.ic_app_logo_hero),
             contentDescription = "SensorsOff Logo",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(22.dp))
+            tint = Color.Unspecified,
+            modifier = Modifier.fillMaxSize()
         )
     }
 }

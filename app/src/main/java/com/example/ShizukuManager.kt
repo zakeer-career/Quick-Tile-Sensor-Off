@@ -287,14 +287,12 @@ object ShizukuManager {
 
     fun getTileActiveSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        val value = prefs.getString("tile_active_subtitle", "Sensors Disabled")
-        return if (!value.isNullOrBlank()) value else "Sensors Disabled"
+        return prefs.getString("tile_active_subtitle", "") ?: ""
     }
 
     fun getTileDisabledSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        val value = prefs.getString("tile_disabled_subtitle", "Sensors Enabled")
-        return if (!value.isNullOrBlank()) value else "Sensors Enabled"
+        return prefs.getString("tile_disabled_subtitle", "") ?: ""
     }
 
     fun getTileBlockMode(context: Context): String {
@@ -315,8 +313,8 @@ object ShizukuManager {
         context: Context,
         iconStyle: String,
         labelText: String,
-        activeSubtitleText: String = "Sensors Disabled",
-        disabledSubtitleText: String = "Sensors Enabled",
+        activeSubtitleText: String = "",
+        disabledSubtitleText: String = "",
         blockMode: String = "global",
         customIconPath: String? = null
     ) {
@@ -324,8 +322,8 @@ object ShizukuManager {
         val editor = prefs.edit()
             .putString("tile_icon_style", iconStyle)
             .putString("tile_label_text", labelText.ifBlank { "Sensors Off" })
-            .putString("tile_active_subtitle", activeSubtitleText.ifBlank { "Sensors Disabled" })
-            .putString("tile_disabled_subtitle", disabledSubtitleText.ifBlank { "Sensors Enabled" })
+            .putString("tile_active_subtitle", activeSubtitleText)
+            .putString("tile_disabled_subtitle", disabledSubtitleText)
             .putString("tile_block_mode", blockMode)
 
         if (customIconPath != null) {

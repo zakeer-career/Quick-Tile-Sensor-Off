@@ -114,14 +114,14 @@ class SensorsOffTileService : TileService() {
             tile.state = Tile.STATE_ACTIVE
             tile.label = displayLabel
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = activeSubtitle
+                tile.subtitle = if (activeSubtitle.isNotBlank()) activeSubtitle else null
             }
             tile.icon = tileIcon
         } else {
             tile.state = Tile.STATE_INACTIVE
             tile.label = displayLabel
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = disabledSubtitle
+                tile.subtitle = if (disabledSubtitle.isNotBlank()) disabledSubtitle else null
             }
             tile.icon = tileIcon
         }

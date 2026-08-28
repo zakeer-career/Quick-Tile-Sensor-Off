@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+
+    <!-- Background Rounded Square Base -->
+    <path
+        android:fillColor="#0B1120"
+        android:pathData="M0,0h128v128h-128z" />
+
+    <!-- Outer Shield Ambient Cyan Border -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M64,24 L28,36.4 C28,36.4 28,65.8 28,66.8 C28,89.5 45,109.4 64,117 C83,109.4 100,89.5 100,66.8 C100,65.8 100,36.4 100,36.4 L64,24 Z" />
+
+    <!-- Shield Inner Core -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M64,31.5 L36,41.2 C36,41.2 36,64.8 36,65.7 C36,84.4 49.6,101 64,107.5 C78.4,101 92,84.4 92,65.7 C92,64.8 92,41.2 92,41.2 L64,31.5 Z" />
+
+    <!-- Toggle Capsule Outer Outline -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M51,56.5 H77 C81.4,56.5 85,60.1 85,64.5 C85,68.9 81.4,72.5 77,72.5 H51 C46.6,72.5 43,68.9 43,64.5 C43,60.1 46.6,56.5 51,56.5 Z" />
+
+    <!-- Toggle Track Inner Dark Core -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M53,59 H75 C78,59 80.5,61.5 80.5,64.5 C80.5,67.5 78,70 75,70 H53 C50,70 47.5,67.5 47.5,64.5 C47.5,61.5 50,59 53,59 Z" />
+
+    <!-- Toggle Knob Indicator -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M55.5,64.5m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+
+    <!-- Sharp Diagonal Slash Line -->
+    <path
+        android:strokeColor="#0F172A"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:pathData="M96,28 L32,112" />
+
+    <path
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M96,28 L32,112" />
+</vector>
