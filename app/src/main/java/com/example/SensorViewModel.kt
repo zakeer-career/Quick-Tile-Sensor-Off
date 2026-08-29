@@ -203,49 +203,69 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    @Volatile
+    private var isActionRunning = false
+
     fun toggleSensorsOff() {
-        viewModelScope.launch {
-            val context = getApplication<Application>().applicationContext
-            val current = _uiState.value.isSensorsOff
-            val target = !current
+        if (isActionRunning) return
+        val current = _uiState.value.isSensorsOff
+        val target = !current
 
-            addLog("Action: Toggling Master SensorsOff to ${if (target) "ENABLED (Sensors Off)" else "DISABLED (Sensors On)"}...")
-            val success = ShizukuManager.setSensorsOffState(context, target)
+        // 1. Instant Optimistic UI Update (0ms delay)
+        val updatedSensors = _uiState.value.sensorList.map { it.copy(isBlocked = target) }
+        _uiState.update { it.copy(isSensorsOff = target, sensorList = updatedSensors) }
+        addLog("Action: Toggling Master SensorsOff to ${if (target) "ENABLED (Sensors Off)" else "DISABLED (Sensors On)"}...")
 
-            if (success) {
-                val updatedSensors = _uiState.value.sensorList.map { it.copy(isBlocked = target) }
-                _uiState.update { it.copy(isSensorsOff = target, sensorList = updatedSensors) }
-                addLog("Status: Successfully set Master SensorsOff = $target and synced all sensors")
-            } else {
-                addLog("Error: Failed to set SensorsOff state. Ensure Shizuku, Root, or Secure Settings permission is granted.")
+        // 2. Perform system operations on background IO pool
+        viewModelScope.launch(Dispatchers.IO) {
+            isActionRunning = true
+            try {
+                val context = getApplication<Application>().applicationContext
+                val success = ShizukuManager.setSensorsOffState(context, target)
+
+                if (success) {
+                    addLog("Status: Successfully set Master SensorsOff = $target and synced all sensors")
+                } else {
+                    addLog("Error: Failed to set SensorsOff state. Ensure Shizuku, Root, or Secure Settings permission is granted.")
+                    // Revert UI on failure
+                    val revertedSensors = _uiState.value.sensorList.map { it.copy(isBlocked = current) }
+                    _uiState.update { it.copy(isSensorsOff = current, sensorList = revertedSensors) }
+                }
+            } finally {
+                isActionRunning = false
+                refreshState()
             }
-
-            delay(200)
-            refreshState()
         }
     }
 
     fun toggleIndividualSensor(sensorId: String) {
-        viewModelScope.launch {
-            val context = getApplication<Application>().applicationContext
-            val currentSensor = _uiState.value.sensorList.find { it.id == sensorId } ?: return@launch
-            val targetState = !currentSensor.isBlocked
+        val currentSensor = _uiState.value.sensorList.find { it.id == sensorId } ?: return
+        val targetState = !currentSensor.isBlocked
 
-            addLog("Action: Toggling '${currentSensor.name}' to ${if (targetState) "BLOCKED" else "ACTIVE"}...")
+        // 1. Instant Optimistic UI Update (0ms delay)
+        val updatedSensors = _uiState.value.sensorList.map {
+            if (it.id == sensorId) it.copy(isBlocked = targetState) else it
+        }
+        val anyBlocked = updatedSensors.any { it.isBlocked }
+        _uiState.update { it.copy(sensorList = updatedSensors, isSensorsOff = anyBlocked) }
+        addLog("Action: Toggling '${currentSensor.name}' to ${if (targetState) "BLOCKED" else "ACTIVE"}...")
+
+        // 2. Background execution on IO thread
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>().applicationContext
             val success = ShizukuManager.setIndividualSensorState(context, sensorId, targetState)
 
             if (success) {
-                val updatedSensors = _uiState.value.sensorList.map {
-                    if (it.id == sensorId) it.copy(isBlocked = targetState) else it
-                }
-                val anyBlocked = updatedSensors.any { it.isBlocked }
-                _uiState.update { it.copy(sensorList = updatedSensors, isSensorsOff = anyBlocked) }
                 addLog("Status: '${currentSensor.name}' set to ${if (targetState) "BLOCKED" else "ACTIVE"}")
             } else {
                 addLog("Error: Failed to toggle '${currentSensor.name}'. Check permissions.")
+                // Revert sensor state on failure
+                val revertedSensors = _uiState.value.sensorList.map {
+                    if (it.id == sensorId) it.copy(isBlocked = currentSensor.isBlocked) else it
+                }
+                val revertedAny = revertedSensors.any { it.isBlocked }
+                _uiState.update { it.copy(sensorList = revertedSensors, isSensorsOff = revertedAny) }
             }
-
-            delay(150)
             refreshState()
         }
     }

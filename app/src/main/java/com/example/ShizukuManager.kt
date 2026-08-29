@@ -107,8 +107,8 @@ object ShizukuManager {
 
     /**
      * Main method to toggle SensorsOff state using direct SensorPrivacyManager system calls:
-     * 1. Shizuku (if running & authorized) via `cmd sensor_privacy` and `service call sensor_privacy`
-     * 2. Direct Root Shell (`su`)
+     * 1. Shizuku (if running & authorized) via single batched command script
+     * 2. Direct Root Shell (`su`) in a single batch process
      * 3. Direct WRITE_SECURE_SETTINGS permission
      * 4. SharedPreferences fallback
      */
@@ -118,7 +118,7 @@ object ShizukuManager {
 
         var executedSuccessfully = false
 
-        // Direct SensorPrivacy shell commands and service calls
+        // Batch all sensor privacy shell commands and service calls into one single execution script
         val commands = mutableListOf(
             "settings put global sensors_off $targetValue",
             "settings put secure sensor_privacy $targetValue",
@@ -126,45 +126,39 @@ object ShizukuManager {
         )
 
         if (turnOff) {
-            // Android 12+ (API 31+) hidden API commands for Microphone & Camera toggles
             commands.add("cmd sensor_privacy set-sensor-state 0 mic true 2>/dev/null")
             commands.add("cmd sensor_privacy set-sensor-state 0 camera true 2>/dev/null")
             commands.add("cmd sensor_privacy set-sensor-state 0 1 true 2>/dev/null")
             commands.add("cmd sensor_privacy set-sensor-state 0 2 true 2>/dev/null")
-
             commands.add("service call sensor_privacy 1 i32 1")
             commands.add("service call sensor_privacy 2 i32 1")
             commands.add("service call sensor_privacy 6 i32 1")
             commands.add("service call sensor_privacy 7 i32 1")
             commands.add("service call sensor_privacy 8 i32 1")
             commands.add("service call sensor_privacy 9 i32 1")
-            // Android 13/14+ mic (1) and camera (2) toggle service calls
             commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 1")
             commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 1")
         } else {
-            // Android 12+ (API 31+) hidden API commands for Microphone & Camera re-enabling
             commands.add("cmd sensor_privacy set-sensor-state 0 mic false 2>/dev/null")
             commands.add("cmd sensor_privacy set-sensor-state 0 camera false 2>/dev/null")
             commands.add("cmd sensor_privacy set-sensor-state 0 1 false 2>/dev/null")
             commands.add("cmd sensor_privacy set-sensor-state 0 2 false 2>/dev/null")
-
             commands.add("service call sensor_privacy 1 i32 0")
             commands.add("service call sensor_privacy 2 i32 0")
             commands.add("service call sensor_privacy 6 i32 0")
             commands.add("service call sensor_privacy 7 i32 0")
             commands.add("service call sensor_privacy 8 i32 0")
             commands.add("service call sensor_privacy 9 i32 0")
-            // Android 13/14+ mic (1) and camera (2) allow service calls
             commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 0")
             commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 0")
         }
 
-        // Method 1: Shizuku
+        val compoundCommand = commands.joinToString(" ; ")
+
+        // Method 1: Shizuku (Single invocation for maximum speed)
         if (isShizukuRunning() && isShizukuAuthorized()) {
             try {
-                for (cmd in commands) {
-                    runShizukuCommand(cmd)
-                }
+                runShizukuCommand(compoundCommand)
                 executedSuccessfully = true
                 Log.d(TAG, "Executed SensorPrivacy commands via Shizuku successfully")
             } catch (e: Throwable) {
@@ -172,12 +166,10 @@ object ShizukuManager {
             }
         }
 
-        // Method 2: Direct Root SU
+        // Method 2: Direct Root SU (Single invocation)
         if (!executedSuccessfully && isRootAvailable()) {
             try {
-                for (cmd in commands) {
-                    runRootCommand(cmd)
-                }
+                runRootCommand(compoundCommand)
                 executedSuccessfully = true
                 Log.d(TAG, "Executed SensorPrivacy commands via Root SU successfully")
             } catch (e: Throwable) {
@@ -238,13 +230,12 @@ object ShizukuManager {
             }
         }
 
+        val compoundCommand = commands.joinToString(" ; ")
         var executedSuccessfully = false
 
         if (isShizukuRunning() && isShizukuAuthorized()) {
             try {
-                for (cmd in commands) {
-                    runShizukuCommand(cmd)
-                }
+                runShizukuCommand(compoundCommand)
                 executedSuccessfully = true
             } catch (e: Throwable) {
                 Log.e(TAG, "Shizuku individual sensor toggle failed", e)
@@ -253,9 +244,7 @@ object ShizukuManager {
 
         if (!executedSuccessfully && isRootAvailable()) {
             try {
-                for (cmd in commands) {
-                    runRootCommand(cmd)
-                }
+                runRootCommand(compoundCommand)
                 executedSuccessfully = true
             } catch (e: Throwable) {
                 Log.e(TAG, "Root individual sensor toggle failed", e)
