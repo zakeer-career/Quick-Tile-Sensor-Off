@@ -57,6 +57,24 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+
+  packaging {
+    resources {
+      excludes += listOf(
+        "**/README.md",
+        "**/readme.md",
+        "**/*.md",
+        "META-INF/*.md",
+        "META-INF/LICENSE*",
+        "META-INF/NOTICE*"
+      )
+    }
+  }
+}
+
+// Ignore README and documentation files from triggering Kotlin compilation rebuilds
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+  exclude { it.file.extension.equals("md", ignoreCase = true) || it.name.startsWith("README", ignoreCase = true) }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
