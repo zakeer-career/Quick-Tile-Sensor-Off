@@ -24,20 +24,49 @@ class SensorsOffTileService : TileService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    override fun onTileAdded() {
+        super.onTileAdded()
+        Log.d(TAG, "Tile added to Quick Settings panel")
+        refreshTileImmediately()
+    }
+
     override fun onStartListening() {
         super.onStartListening()
-        serviceScope.launch {
-            val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
-            val isSensorsOff = if (blockMode == "cam_mic") {
-                ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                        ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-            } else {
-                ShizukuManager.getSensorsOffState(applicationContext)
-            }
+        // 1. Immediate synchronous update from fast local state so SystemUI never displays STATE_UNAVAILABLE
+        refreshTileImmediately()
 
-            withContext(Dispatchers.Main) {
-                updateTileState(isSensorsOff)
+        // 2. Asynchronous verification of live hardware state
+        serviceScope.launch {
+            try {
+                val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
+                val isSensorsOff = if (blockMode == "cam_mic") {
+                    ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                            ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                } else {
+                    ShizukuManager.getSensorsOffState(applicationContext)
+                }
+
+                withContext(Dispatchers.Main) {
+                    updateTileState(isSensorsOff)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error checking live sensor state in onStartListening", e)
             }
+        }
+    }
+
+    private fun refreshTileImmediately() {
+        try {
+            val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", MODE_PRIVATE)
+            val blockMode = prefs.getString("tile_block_mode", "global") ?: "global"
+            val isSensorsOff = if (blockMode == "cam_mic") {
+                prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+            } else {
+                prefs.getBoolean("sensors_off_enabled", false)
+            }
+            updateTileState(isSensorsOff)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in immediate tile refresh", e)
         }
     }
 
