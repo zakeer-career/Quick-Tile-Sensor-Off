@@ -74,32 +74,38 @@ class SensorsOffTileService : TileService() {
         super.onClick()
         Log.d(TAG, "Tile clicked! Initiating asynchronous sensor toggle...")
 
+        val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
+        val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", MODE_PRIVATE)
+        val current = if (blockMode == "cam_mic") {
+            prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+        } else {
+            prefs.getBoolean("sensors_off_enabled", false)
+        }
+        val target = !current
+
+        // Instant optimistic tile update so user feels immediate response
+        updateTileState(target)
+
         serviceScope.launch {
-            val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
-            
             if (blockMode == "cam_mic") {
-                val camState = ShizukuManager.getIndividualSensorState(applicationContext, "camera")
-                val micState = ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-                val newState = !(camState || micState)
-
-                Log.d(TAG, "Toggling Selective Camera + Mic to $newState")
-                ShizukuManager.setIndividualSensorState(applicationContext, "camera", newState)
-                ShizukuManager.setIndividualSensorState(applicationContext, "mic", newState)
-
-                withContext(Dispatchers.Main) {
-                    updateTileState(newState)
-                }
+                Log.d(TAG, "Toggling Selective Camera + Mic to $target")
+                ShizukuManager.setIndividualSensorState(applicationContext, "camera", target)
+                ShizukuManager.setIndividualSensorState(applicationContext, "mic", target)
             } else {
-                val currentState = ShizukuManager.getSensorsOffState(applicationContext)
-                val newState = !currentState
+                Log.d(TAG, "Toggling Global SensorsOff to $target")
+                ShizukuManager.setSensorsOffState(applicationContext, target)
+            }
 
-                Log.d(TAG, "Toggling Global SensorsOff to $newState")
-                ShizukuManager.setSensorsOffState(applicationContext, newState)
+            // Sync with hardware state
+            val confirmedState = if (blockMode == "cam_mic") {
+                ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                        ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+            } else {
+                ShizukuManager.getSensorsOffState(applicationContext)
+            }
 
-                val updatedState = ShizukuManager.getSensorsOffState(applicationContext)
-                withContext(Dispatchers.Main) {
-                    updateTileState(updatedState)
-                }
+            withContext(Dispatchers.Main) {
+                updateTileState(confirmedState)
             }
         }
     }

@@ -204,6 +204,9 @@ object ShizukuManager {
             .putBoolean("sensor_blocked_light", turnOff)
             .apply()
 
+        // Explicitly request SystemUI to update the Quick Settings tile immediately
+        notifyTileServiceToUpdate(context)
+
         return executedSuccessfully
     }
 
@@ -253,6 +256,9 @@ object ShizukuManager {
 
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("sensor_blocked_$sensorId", turnOff).apply()
+
+        // Explicitly request SystemUI to update the Quick Settings tile immediately
+        notifyTileServiceToUpdate(context)
 
         return executedSuccessfully
     }
@@ -319,6 +325,7 @@ object ShizukuManager {
             editor.putString("custom_icon_path", customIconPath)
         }
         editor.apply()
+        notifyTileServiceToUpdate(context)
     }
 
     suspend fun saveCustomTileIconFromUri(context: Context, uri: android.net.Uri): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -498,6 +505,21 @@ object ShizukuManager {
         } catch (e: Throwable) {
             Log.e(TAG, "Error executing Root command: $command", e)
             ""
+        }
+    }
+
+    /**
+     * Sends an explicit signal to Android SystemUI to refresh the Quick Settings tile
+     * whenever settings or sensor states change inside the app.
+     */
+    fun notifyTileServiceToUpdate(context: Context) {
+        try {
+            android.service.quicksettings.TileService.requestListeningState(
+                context,
+                android.content.ComponentName(context, SensorsOffTileService::class.java)
+            )
+        } catch (e: Throwable) {
+            Log.w(TAG, "Could not requestListeningState for tile: ${e.message}")
         }
     }
 }
