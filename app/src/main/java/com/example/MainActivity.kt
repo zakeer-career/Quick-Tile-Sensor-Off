@@ -1222,7 +1222,7 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
                     )
 
                     Text(
-                        text = "Version 1.4.0 (Enterprise Privacy Engine)",
+                        text = "Version 2.0",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
