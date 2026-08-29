@@ -1,5 +1,10 @@
 # SensorsOff
 
+   <p align="center">
+  <img src="https://github.com/user-attachments/assets/5e387daf-d6c9-4e86-a6a8-661a8d81b0c4" width="200" alt="Your Logo"/>
+</p>
+
+
 [![Platform](https://img.shields.io/badge/Platform-Android-3DDC84.svg?style=flat&logo=android)](https://www.android.com)
 [![Release](https://img.shields.io/badge/Release-v2.0-brightgreen.svg?style=flat)](https://github.com/LinerSRT/SensorsOff)
 [![API](https://img.shields.io/badge/API-29%2B-blue.svg?style=flat)](https://developer.android.com/about/versions/10)
