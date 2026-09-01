@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -1043,6 +1044,14 @@ fun SleekLogsTabContent(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
+    // Real-time 1-second ticker for live relative seconds and session uptime
+    val currentWallTimeMs by produceState(initialValue = System.currentTimeMillis()) {
+        while (true) {
+            delay(1000)
+            value = System.currentTimeMillis()
+        }
+    }
+
     val telemetryLogs by viewModel.telemetryLogs.collectAsStateWithLifecycle()
     val tileDiagnostics by viewModel.tileDiagnostics.collectAsStateWithLifecycle()
 
@@ -1057,20 +1066,24 @@ fun SleekLogsTabContent(
     val exportText = remember(telemetryLogs, tileDiagnostics) {
         buildString {
             appendLine("==================================================")
-            appendLine("           SensorsOff Telemetry Report            ")
+            appendLine("           SensorsOff Advanced Telemetry          ")
             appendLine("==================================================")
             appendLine("App Version       : 2.0 (SensorsOff)")
             appendLine("Device            : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
+            appendLine("Session Uptime    : ${tileDiagnostics.getUptimeString(System.currentTimeMillis())}")
             appendLine("Quick Tile State  : ${tileDiagnostics.lastState}")
             appendLine("Quick Tile Mode   : ${tileDiagnostics.blockMode}")
             appendLine("Tile Service      : SensorsOffTileService (ACTIVE_TILE)")
             appendLine("Last Action       : ${tileDiagnostics.lastAction} at ${tileDiagnostics.lastActionTime}")
             tileDiagnostics.lastLatencyMs?.let { appendLine("Last Latency      : ${it}ms") }
             appendLine("==================================================")
-            appendLine("                      LOGS                        ")
+            appendLine("            TIMED EVENT LOGS (PRECISE)            ")
             appendLine("==================================================")
-            telemetryLogs.reversed().forEach { entry ->
-                appendLine(entry.toFormattedString())
+            val chronological = telemetryLogs.reversed()
+            for (i in chronological.indices) {
+                val entry = chronological[i]
+                val prevTs = if (i > 0) chronological[i - 1].timestamp else null
+                appendLine(entry.toFormattedString(prevTs))
             }
         }
     }
@@ -1096,7 +1109,7 @@ fun SleekLogsTabContent(
             .fillMaxSize()
             .padding(horizontal = 20.dp)
     ) {
-        // 1. LIVE QUICK TILE MONITOR CARD
+        // 1. LIVE QUICK TILE MONITOR CARD WITH ADVANCED TIMING
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -1228,27 +1241,69 @@ fun SleekLogsTabContent(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
+                // Advanced Timing & Event Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Last Event: ${tileDiagnostics.lastAction}",
-                        fontSize = 10.sp,
-                        color = colors.textSecondary
-                    )
-                    Text(
-                        text = "Time: ${tileDiagnostics.lastActionTime}",
-                        fontSize = 10.sp,
-                        color = colors.textMuted
-                    )
+                    Column(modifier = Modifier.weight(1.3f)) {
+                        Text(
+                            text = "Last Event: ${tileDiagnostics.lastAction}",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = colors.textPrimary,
+                            maxLines = 1
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${tileDiagnostics.lastActionTime} ",
+                                fontSize = 9.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = colors.textMuted
+                            )
+                            if (tileDiagnostics.lastActionTimestamp > 0L) {
+                                Text(
+                                    text = "(${tileDiagnostics.getActionRelativeTime(currentWallTimeMs)})",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.accentCyan
+                                )
+                            }
+                        }
+                    }
+
+                    // Session Uptime with Seconds
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (colors.isDark) Color(0xFF1A2230) else Color(0xFFE2E8F0))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AccessTime,
+                                contentDescription = "Uptime",
+                                tint = colors.accentGreen,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = tileDiagnostics.getUptimeString(currentWallTimeMs),
+                                fontSize = 10.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accentGreen
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // 2. CATEGORY FILTER CHIPS
         Row(
@@ -1271,6 +1326,51 @@ fun SleekLogsTabContent(
                         fontSize = 10.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isSelected) Color.White else colors.textSecondary
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 2.5 ADVANCED TIME MODE SELECTOR BAR (Exact ss.ms / Relative / Delta / Full)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "TIME:",
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.textMuted,
+                letterSpacing = 0.5.sp
+            )
+            TimeDisplayMode.values().forEach { mode ->
+                val isSelected = uiState.selectedTimeMode == mode
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isSelected) colors.accentCyan.copy(alpha = 0.2f)
+                            else if (colors.isDark) Color(0xFF111722) else Color(0xFFEDF2F7)
+                        )
+                        .border(
+                            1.dp,
+                            if (isSelected) colors.accentCyan else Color.Transparent,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { viewModel.setTimeDisplayMode(mode) }
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = mode.badge,
+                        fontSize = 9.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) colors.accentCyan else colors.textMuted
                     )
                 }
             }
@@ -1330,7 +1430,7 @@ fun SleekLogsTabContent(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 4. DEEP LOGS CONSOLE
+        // 4. DEEP TIMED LOGS CONSOLE
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1356,7 +1456,10 @@ fun SleekLogsTabContent(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(filteredLogs, key = { it.id }) { entry ->
+                    items(filteredLogs.size, key = { index -> filteredLogs[index].id }) { index ->
+                        val entry = filteredLogs[index]
+                        val prevItemTs = if (index + 1 < filteredLogs.size) filteredLogs[index + 1].timestamp else null
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1370,7 +1473,10 @@ fun SleekLogsTabContent(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
                                         // Category Tag Badge
                                         Box(
                                             modifier = Modifier
@@ -1400,29 +1506,69 @@ fun SleekLogsTabContent(
 
                                         Spacer(modifier = Modifier.width(6.dp))
 
-                                        // Time
+                                        // Advanced Time Rendering according to selected mode
+                                        val displayTimeText = when (uiState.selectedTimeMode) {
+                                            TimeDisplayMode.EXACT -> entry.formattedTime
+                                            TimeDisplayMode.RELATIVE -> entry.getRelativeTime(currentWallTimeMs)
+                                            TimeDisplayMode.DELTA -> entry.getDeltaTime(prevItemTs)
+                                            TimeDisplayMode.FULL -> if (entry.fullDateTime.isNotBlank()) entry.fullDateTime else entry.formattedTime
+                                        }
+
                                         Text(
-                                            text = entry.formattedTime,
+                                            text = displayTimeText,
                                             fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
                                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            color = colors.textMuted
+                                            color = if (uiState.selectedTimeMode == TimeDisplayMode.RELATIVE) colors.accentCyan else colors.textMuted
                                         )
+
+                                        // Supplementary Relative Time pill if not in relative mode
+                                        if (uiState.selectedTimeMode != TimeDisplayMode.RELATIVE) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "(${entry.getRelativeTime(currentWallTimeMs)})",
+                                                fontSize = 9.sp,
+                                                color = colors.textMuted.copy(alpha = 0.7f)
+                                            )
+                                        }
                                     }
 
-                                    entry.executionMs?.let { latency ->
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(colors.accentCyan.copy(alpha = 0.15f))
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        ) {
-                                            Text(
-                                                text = "${latency}ms",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                color = colors.accentCyan
-                                            )
+                                    // Right Side Timing Badges (Interval Delta + Latency)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (prevItemTs != null && uiState.selectedTimeMode != TimeDisplayMode.DELTA) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(5.dp))
+                                                    .background(if (colors.isDark) Color(0xFF1E2638) else Color(0xFFE2E8F0))
+                                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = entry.getDeltaTime(prevItemTs),
+                                                    fontSize = 8.5.sp,
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                    color = colors.textMuted
+                                                )
+                                            }
+                                        }
+
+                                        entry.executionMs?.let { latency ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(5.dp))
+                                                    .background(colors.accentCyan.copy(alpha = 0.15f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${latency}ms",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                    color = colors.accentCyan
+                                                )
+                                            }
                                         }
                                     }
                                 }

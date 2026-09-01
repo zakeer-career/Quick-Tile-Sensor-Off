@@ -49,6 +49,7 @@ data class SensorUiState(
     val appThemeMode: String = "system",
     val appLauncherAlias: String = "MainActivityDefault",
     val selectedLogCategory: LogCategory = LogCategory.ALL,
+    val selectedTimeMode: TimeDisplayMode = TimeDisplayMode.EXACT,
     val logs: List<String> = emptyList(),
     val tileSettings: TileSettingsState = TileSettingsState(),
     val sensorList: List<SensorItem> = listOf(
@@ -370,6 +371,10 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setLogCategoryFilter(category: LogCategory) {
         _uiState.update { it.copy(selectedLogCategory = category) }
+    }
+
+    fun setTimeDisplayMode(mode: TimeDisplayMode) {
+        _uiState.update { it.copy(selectedTimeMode = mode) }
     }
 
     fun clearLogs() {

@@ -34,6 +34,13 @@ enum class LogLevel {
     DEBUG
 }
 
+enum class TimeDisplayMode(val label: String, val badge: String) {
+    EXACT("Exact (ss.ms)", "HH:mm:ss.SSS"),
+    RELATIVE("Relative", "Xs ago"),
+    DELTA("Interval", "+Δt"),
+    FULL("Full Date", "YYYY-MM-DD")
+}
+
 data class LogEntry(
     val id: Long,
     val timestamp: Long,
@@ -42,12 +49,35 @@ data class LogEntry(
     val level: LogLevel,
     val title: String,
     val detail: String = "",
-    val executionMs: Long? = null
+    val executionMs: Long? = null,
+    val fullDateTime: String = ""
 ) {
-    fun toFormattedString(): String {
-        val execStr = if (executionMs != null) " [${executionMs}ms]" else ""
+    fun getRelativeTime(nowMs: Long = System.currentTimeMillis()): String {
+        val diff = (nowMs - timestamp).coerceAtLeast(0)
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        return when {
+            seconds < 2 -> "Just now"
+            seconds < 60 -> "${seconds}s ago"
+            minutes < 60 -> "${minutes}m ${seconds % 60}s ago"
+            hours < 24 -> "${hours}h ${minutes % 60}m ago"
+            else -> "${hours / 24}d ago"
+        }
+    }
+
+    fun getDeltaTime(prevTimestamp: Long?): String {
+        if (prevTimestamp == null) return "T0 (Initial)"
+        val diff = (timestamp - prevTimestamp)
+        return if (diff < 1000) "+${diff}ms" else "+${String.format(Locale.US, "%.2fs", diff / 1000.0)}"
+    }
+
+    fun toFormattedString(prevTimestamp: Long? = null): String {
+        val execStr = if (executionMs != null) " [Exec: ${executionMs}ms]" else ""
+        val deltaStr = if (prevTimestamp != null) " [Δ: ${getDeltaTime(prevTimestamp)}]" else ""
         val detailStr = if (detail.isNotBlank()) "\n  ↳ $detail" else ""
-        return "[$formattedTime] [${category.badgeText}] [${level.name}] $title$execStr$detailStr"
+        val dateTimeStr = if (fullDateTime.isNotBlank()) fullDateTime else formattedTime
+        return "[$dateTimeStr]$deltaStr [${category.badgeText}] [${level.name}] $title$execStr$detailStr"
     }
 }
 
@@ -55,13 +85,38 @@ data class TileDiagnostics(
     val lastState: String = "UNKNOWN",
     val lastAction: String = "None recorded",
     val lastActionTime: String = "--",
+    val lastActionTimestamp: Long = 0L,
     val lastLatencyMs: Long? = null,
     val blockMode: String = "global",
     val label: String = "Sensors Off",
     val iconStyle: String = "stock",
     val isListening: Boolean = false,
-    val serviceActive: Boolean = true
-)
+    val serviceActive: Boolean = true,
+    val startupTimestamp: Long = System.currentTimeMillis()
+) {
+    fun getActionRelativeTime(nowMs: Long = System.currentTimeMillis()): String {
+        if (lastActionTimestamp <= 0L) return "--"
+        val diff = (nowMs - lastActionTimestamp).coerceAtLeast(0)
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        return when {
+            seconds < 2 -> "Just now"
+            seconds < 60 -> "${seconds}s ago"
+            minutes < 60 -> "${minutes}m ${seconds % 60}s ago"
+            else -> "${minutes / 60}h ago"
+        }
+    }
+
+    fun getUptimeString(nowMs: Long = System.currentTimeMillis()): String {
+        val diff = (nowMs - startupTimestamp).coerceAtLeast(0)
+        val totalSecs = diff / 1000
+        val m = totalSecs / 60
+        val s = totalSecs % 60
+        val h = m / 60
+        return if (h > 0) String.format(Locale.US, "%02dh %02dm %02ds", h, m % 60, s)
+        else String.format(Locale.US, "%02dm %02ds", m, s)
+    }
+}
 
 object TileLogManager {
     private const val TAG = "TileLogManager"
@@ -72,6 +127,7 @@ object TileLogManager {
 
     private val idCounter = AtomicLong(System.currentTimeMillis())
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    private val fullDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
 
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
     val logsFlow: StateFlow<List<LogEntry>> = _logsFlow.asStateFlow()
@@ -98,16 +154,18 @@ object TileLogManager {
                 val array = JSONArray(rawJson)
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
+                    val ts = obj.optLong("timestamp", System.currentTimeMillis())
                     list.add(
                         LogEntry(
-                            id = obj.optLong("id", System.currentTimeMillis()),
-                            timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
-                            formattedTime = obj.optString("formattedTime", ""),
+                            id = obj.optLong("id", ts),
+                            timestamp = ts,
+                            formattedTime = obj.optString("formattedTime", timeFormat.format(Date(ts))),
                             category = runCatching { LogCategory.valueOf(obj.getString("category")) }.getOrDefault(LogCategory.TILE),
                             level = runCatching { LogLevel.valueOf(obj.getString("level")) }.getOrDefault(LogLevel.INFO),
                             title = obj.getString("title"),
                             detail = obj.optString("detail", ""),
-                            executionMs = if (obj.has("executionMs")) obj.getLong("executionMs") else null
+                            executionMs = if (obj.has("executionMs")) obj.getLong("executionMs") else null,
+                            fullDateTime = obj.optString("fullDateTime", fullDateFormat.format(Date(ts)))
                         )
                     )
                 }
@@ -121,6 +179,7 @@ object TileLogManager {
                     lastState = diagObj.optString("lastState", "STATE_INACTIVE"),
                     lastAction = diagObj.optString("lastAction", "Ready"),
                     lastActionTime = diagObj.optString("lastActionTime", "--"),
+                    lastActionTimestamp = diagObj.optLong("lastActionTimestamp", 0L),
                     lastLatencyMs = if (diagObj.has("lastLatencyMs")) diagObj.getLong("lastLatencyMs") else null,
                     blockMode = diagObj.optString("blockMode", "global"),
                     label = diagObj.optString("label", "Sensors Off"),
@@ -147,6 +206,7 @@ object TileLogManager {
                         put("id", entry.id)
                         put("timestamp", entry.timestamp)
                         put("formattedTime", entry.formattedTime)
+                        put("fullDateTime", entry.fullDateTime)
                         put("category", entry.category.name)
                         put("level", entry.level.name)
                         put("title", entry.title)
@@ -161,6 +221,7 @@ object TileLogManager {
                     put("lastState", diag.lastState)
                     put("lastAction", diag.lastAction)
                     put("lastActionTime", diag.lastActionTime)
+                    put("lastActionTimestamp", diag.lastActionTimestamp)
                     diag.lastLatencyMs?.let { put("lastLatencyMs", it) }
                     put("blockMode", diag.blockMode)
                     put("label", diag.label)
@@ -187,6 +248,7 @@ object TileLogManager {
     ) {
         val now = System.currentTimeMillis()
         val formatted = timeFormat.format(Date(now))
+        val fullFormatted = fullDateFormat.format(Date(now))
         val entry = LogEntry(
             id = idCounter.incrementAndGet(),
             timestamp = now,
@@ -195,7 +257,8 @@ object TileLogManager {
             level = level,
             title = title,
             detail = detail,
-            executionMs = executionMs
+            executionMs = executionMs,
+            fullDateTime = fullFormatted
         )
 
         Log.d(TAG, "[${category.badgeText}] $title | $detail")
@@ -227,12 +290,14 @@ object TileLogManager {
         iconStyle: String? = null,
         isListening: Boolean? = null
     ) {
-        val now = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val now = System.currentTimeMillis()
+        val formattedNow = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(now))
         _diagnosticsFlow.update { prev ->
             prev.copy(
                 lastState = lastState ?: prev.lastState,
                 lastAction = lastAction ?: prev.lastAction,
-                lastActionTime = if (lastAction != null) now else prev.lastActionTime,
+                lastActionTime = if (lastAction != null) formattedNow else prev.lastActionTime,
+                lastActionTimestamp = if (lastAction != null) now else prev.lastActionTimestamp,
                 lastLatencyMs = lastLatencyMs ?: prev.lastLatencyMs,
                 blockMode = blockMode ?: prev.blockMode,
                 label = label ?: prev.label,
