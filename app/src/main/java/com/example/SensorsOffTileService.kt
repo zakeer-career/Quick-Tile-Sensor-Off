@@ -135,12 +135,12 @@ class SensorsOffTileService : TileService() {
 
     private fun refreshTileImmediately() {
         try {
-            val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", MODE_PRIVATE)
-            val blockMode = prefs.getString("tile_block_mode", "global") ?: "global"
+            val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
             val isSensorsOff = if (blockMode == "cam_mic") {
-                prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+                ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                        ShizukuManager.getIndividualSensorState(applicationContext, "mic")
             } else {
-                prefs.getBoolean("sensors_off_enabled", false)
+                ShizukuManager.getSensorsOffState(applicationContext)
             }
             updateTileState(isSensorsOff)
         } catch (e: Throwable) {
@@ -154,11 +154,11 @@ class SensorsOffTileService : TileService() {
         Log.d(TAG, "Tile clicked! Initiating asynchronous sensor toggle...")
 
         val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
-        val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", MODE_PRIVATE)
         val current = if (blockMode == "cam_mic") {
-            prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+            ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                    ShizukuManager.getIndividualSensorState(applicationContext, "mic")
         } else {
-            prefs.getBoolean("sensors_off_enabled", false)
+            ShizukuManager.getSensorsOffState(applicationContext)
         }
         val target = !current
         val targetStateName = if (target) "STATE_ACTIVE (Sensors Blocked)" else "STATE_INACTIVE (Sensors Allowed)"

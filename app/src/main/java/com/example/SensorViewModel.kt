@@ -117,20 +117,39 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 addLog("Shizuku listener note: ${e.message}")
             }
 
-            // Register ContentObserver to track real-time global settings changes
+            // Register ContentObserver to track real-time global and secure settings changes
             try {
-                context.contentResolver.registerContentObserver(
+                val cr = context.contentResolver
+                val uris = listOf(
                     Settings.Global.getUriFor("sensors_off"),
-                    false,
-                    contentObserver
-                )
-                context.contentResolver.registerContentObserver(
+                    Settings.Secure.getUriFor("sensors_off"),
+                    Settings.System.getUriFor("sensors_off"),
+                    Settings.Global.getUriFor("sensor_privacy"),
                     Settings.Secure.getUriFor("sensor_privacy"),
-                    false,
-                    contentObserver
+                    Settings.Secure.getUriFor("sensor_privacy_camera"),
+                    Settings.Secure.getUriFor("sensor_privacy_microphone"),
+                    Settings.Global.getUriFor("all_sensors_off")
                 )
+                for (uri in uris) {
+                    if (uri != null) {
+                        try {
+                            cr.registerContentObserver(uri, false, contentObserver)
+                        } catch (t: Throwable) {}
+                    }
+                }
             } catch (e: Throwable) {
                 // Observer fail safe
+            }
+
+            // Periodic background sync loop (every 2.5s) to guarantee real-time tile & UI freshness
+            viewModelScope.launch(Dispatchers.IO) {
+                while (true) {
+                    delay(2500)
+                    val liveOff = ShizukuManager.getSensorsOffState(context)
+                    if (liveOff != _uiState.value.isSensorsOff) {
+                        refreshState()
+                    }
+                }
             }
         }
     }
@@ -184,6 +203,16 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 val sensorBlocked = ShizukuManager.getIndividualSensorState(context, sensor.id)
                 sensor.copy(isBlocked = sensorBlocked)
             }
+
+            val stateName = if (isOff) "STATE_ACTIVE (2)" else "STATE_INACTIVE (1)"
+            TileLogManager.updateTileDiagnostics(
+                context,
+                lastState = stateName,
+                lastAction = if (isOff) "System Sensor Privacy ON" else "System Sensor Privacy OFF",
+                blockMode = tileBlockMode,
+                label = tileLabelText,
+                iconStyle = tileIconStyle
+            )
 
             _uiState.update { state ->
                 state.copy(

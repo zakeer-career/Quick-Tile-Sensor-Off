@@ -264,9 +264,45 @@ object ShizukuManager {
     }
 
     fun getIndividualSensorState(context: Context, sensorId: String): Boolean {
+        // If all sensors are off globally, this sensor is off
+        if (getSensorsOffState(context)) {
+            return true
+        }
+
+        // Check native SensorPrivacyManager for camera / mic
+        try {
+            val spm = context.getSystemService("sensor_privacy")
+            if (spm != null) {
+                val cls = spm.javaClass
+                val mSensor = cls.methods.firstOrNull {
+                    it.name == "isSensorPrivacyEnabled" &&
+                    it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType
+                }
+                if (mSensor != null) {
+                    if (sensorId.equals("camera", ignoreCase = true)) {
+                        val cam = mSensor.invoke(spm, 2) as? Boolean
+                        if (cam == true) return true
+                    } else if (sensorId.equals("mic", ignoreCase = true) || sensorId.equals("microphone", ignoreCase = true)) {
+                        val mic = mSensor.invoke(spm, 1) as? Boolean
+                        if (mic == true) return true
+                    }
+                }
+            }
+        } catch (e: Throwable) {}
+
+        // Check Secure settings for camera/mic
+        try {
+            val cr = context.contentResolver
+            if (sensorId.equals("camera", ignoreCase = true)) {
+                if (Settings.Secure.getInt(cr, "sensor_privacy_camera", -1) == 1) return true
+            } else if (sensorId.equals("mic", ignoreCase = true) || sensorId.equals("microphone", ignoreCase = true)) {
+                if (Settings.Secure.getInt(cr, "sensor_privacy_microphone", -1) == 1) return true
+            }
+        } catch (e: Throwable) {}
+
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        val defaultVal = prefs.getBoolean("sensors_off_enabled", false)
-        return prefs.getBoolean("sensor_blocked_$sensorId", defaultVal)
+        return prefs.getBoolean("sensor_blocked_$sensorId", false)
     }
 
     fun getTileIconStyle(context: Context): String {
@@ -413,16 +449,104 @@ object ShizukuManager {
     }
 
     fun getSensorsOffState(context: Context): Boolean {
-        // Method 1: Check live status directly via Shizuku if available
-        if (isShizukuRunning() && isShizukuAuthorized()) {
-            try {
-                val cmdOut = runShizukuCommand("cmd sensor_privacy is-sensor-privacy-enabled").trim()
-                if (cmdOut.contains("true", ignoreCase = true)) {
-                    return true
-                } else if (cmdOut.contains("false", ignoreCase = true)) {
-                    return false
+        // Layer 1: Check native Android SensorPrivacyManager directly via reflection
+        try {
+            val spm = context.getSystemService("sensor_privacy")
+            if (spm != null) {
+                val cls = spm.javaClass
+                
+                // 1. isSensorPrivacyEnabled()
+                val mGlobal = cls.methods.firstOrNull { it.name == "isSensorPrivacyEnabled" && it.parameterTypes.isEmpty() }
+                if (mGlobal != null) {
+                    val res = mGlobal.invoke(spm) as? Boolean
+                    if (res == true) return true
+                }
+                
+                // 2. isAllSensorPrivacyEnabled()
+                val mAll = cls.methods.firstOrNull { it.name == "isAllSensorPrivacyEnabled" && it.parameterTypes.isEmpty() }
+                if (mAll != null) {
+                    val res = mAll.invoke(spm) as? Boolean
+                    if (res == true) return true
                 }
 
+                // 3. isSensorPrivacyEnabled(int sensor) - 1: Mic, 2: Camera
+                val mSensor = cls.methods.firstOrNull {
+                    it.name == "isSensorPrivacyEnabled" &&
+                    it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType
+                }
+                if (mSensor != null) {
+                    val mic = mSensor.invoke(spm, 1) as? Boolean
+                    val cam = mSensor.invoke(spm, 2) as? Boolean
+                    if (mic == true && cam == true) return true
+                }
+            }
+        } catch (e: Throwable) {
+            Log.d(TAG, "SensorPrivacyManager reflection check: ${e.message}")
+        }
+
+        // Layer 2: Check System / Global / Secure settings across all OEM key variations
+        try {
+            val cr = context.contentResolver
+            val keys = listOf(
+                "sensors_off",
+                "sensor_privacy",
+                "all_sensors_off",
+                "sensor_privacy_camera",
+                "sensor_privacy_microphone"
+            )
+            for (key in keys) {
+                try {
+                    val gVal = Settings.Global.getInt(cr, key, -1)
+                    if (gVal == 1) return true
+                } catch (t: Throwable) {}
+                try {
+                    val sVal = Settings.Secure.getInt(cr, key, -1)
+                    if (sVal == 1) return true
+                } catch (t: Throwable) {}
+                try {
+                    val sysVal = Settings.System.getInt(cr, key, -1)
+                    if (sysVal == 1) return true
+                } catch (t: Throwable) {}
+            }
+        } catch (e: Throwable) {
+            Log.d(TAG, "Settings table check error: ${e.message}")
+        }
+
+        // Layer 3: Check live status via Shizuku IPC if available
+        if (isShizukuRunning() && isShizukuAuthorized()) {
+            try {
+                // Command 1: cmd sensor_privacy is-sensor-privacy-enabled 0
+                val cmdUserOut = runShizukuCommand("cmd sensor_privacy is-sensor-privacy-enabled 0").trim()
+                if (cmdUserOut.contains("true", ignoreCase = true)) return true
+                if (cmdUserOut.contains("false", ignoreCase = true)) return false
+
+                // Command 2: cmd sensor_privacy is-sensor-privacy-enabled
+                val cmdOut = runShizukuCommand("cmd sensor_privacy is-sensor-privacy-enabled").trim()
+                if (cmdOut.contains("true", ignoreCase = true)) return true
+                if (cmdOut.contains("false", ignoreCase = true)) return false
+
+                // Command 3: dumpsys sensor_privacy
+                val dumpOut = runShizukuCommand("dumpsys sensor_privacy").trim()
+                if (dumpOut.isNotBlank()) {
+                    if (dumpOut.contains("Global sensor privacy: true", ignoreCase = true) ||
+                        dumpOut.contains("isAllSensorPrivacyEnabled: true", ignoreCase = true) ||
+                        dumpOut.contains("Sensor privacy is enabled: true", ignoreCase = true) ||
+                        dumpOut.contains("isEnabled: true", ignoreCase = true) ||
+                        dumpOut.contains("mIsSensorPrivacyEnabled: true", ignoreCase = true) ||
+                        dumpOut.contains("State: ENABLED", ignoreCase = true)
+                    ) {
+                        return true
+                    }
+                }
+
+                // Command 4: service call sensor_privacy 1 or 8
+                val serviceOut = runShizukuCommand("service call sensor_privacy 1 ; service call sensor_privacy 8 i32 0").trim()
+                if (serviceOut.contains("00000001")) {
+                    return true
+                }
+
+                // Command 5: settings get global sensors_off
                 val globOut = runShizukuCommand("settings get global sensors_off").trim()
                 if (globOut == "1") return true
                 if (globOut == "0") return false
@@ -431,24 +555,21 @@ object ShizukuManager {
             }
         }
 
-        // Method 2: Check global or secure settings
-        return try {
-            val globalVal = Settings.Global.getInt(context.contentResolver, "sensors_off", -1)
-            if (globalVal != -1) {
-                globalVal == 1
-            } else {
-                val secureVal = Settings.Secure.getInt(context.contentResolver, "sensor_privacy", -1)
-                if (secureVal != -1) {
-                    secureVal == 1
-                } else {
-                    val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-                    prefs.getBoolean("sensors_off_enabled", false)
+        // Layer 4: Check live status via Root SU if available
+        if (isRootAvailable()) {
+            try {
+                val rootCmd = runRootCommand("cmd sensor_privacy is-sensor-privacy-enabled 0 || cmd sensor_privacy is-sensor-privacy-enabled || dumpsys sensor_privacy | grep -i 'true'").trim()
+                if (rootCmd.contains("true", ignoreCase = true) || rootCmd.contains("ENABLED", ignoreCase = true)) {
+                    return true
                 }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Could not query sensor_privacy via Root SU", e)
             }
-        } catch (e: Throwable) {
-            val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-            prefs.getBoolean("sensors_off_enabled", false)
         }
+
+        // Layer 5: Fallback to SharedPreferences
+        val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("sensors_off_enabled", false)
     }
 
     private fun runShizukuCommand(command: String): String {
