@@ -518,8 +518,20 @@ object ShizukuManager {
                 context,
                 android.content.ComponentName(context, SensorsOffTileService::class.java)
             )
+            TileLogManager.logTileEvent(
+                context,
+                "SystemUI Sync Dispatched",
+                "Invoked TileService.requestListeningState() -> SystemUI forced tile invalidate",
+                LogLevel.DEBUG
+            )
         } catch (e: Throwable) {
             Log.w(TAG, "Could not requestListeningState for tile: ${e.message}")
+            TileLogManager.logTileEvent(
+                context,
+                "SystemUI Sync Warning",
+                "requestListeningState failed: ${e.message}",
+                LogLevel.WARN
+            )
         }
     }
 }

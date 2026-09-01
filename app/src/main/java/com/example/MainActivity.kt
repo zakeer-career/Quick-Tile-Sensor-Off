@@ -1043,8 +1043,36 @@ fun SleekLogsTabContent(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
-    val logsText = remember(uiState.logs) {
-        uiState.logs.reversed().joinToString(separator = "\n")
+    val telemetryLogs by viewModel.telemetryLogs.collectAsStateWithLifecycle()
+    val tileDiagnostics by viewModel.tileDiagnostics.collectAsStateWithLifecycle()
+
+    val filteredLogs = remember(telemetryLogs, uiState.selectedLogCategory) {
+        if (uiState.selectedLogCategory == LogCategory.ALL) {
+            telemetryLogs
+        } else {
+            telemetryLogs.filter { it.category == uiState.selectedLogCategory }
+        }
+    }
+
+    val exportText = remember(telemetryLogs, tileDiagnostics) {
+        buildString {
+            appendLine("==================================================")
+            appendLine("           SensorsOff Telemetry Report            ")
+            appendLine("==================================================")
+            appendLine("App Version       : 2.0 (SensorsOff)")
+            appendLine("Device            : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
+            appendLine("Quick Tile State  : ${tileDiagnostics.lastState}")
+            appendLine("Quick Tile Mode   : ${tileDiagnostics.blockMode}")
+            appendLine("Tile Service      : SensorsOffTileService (ACTIVE_TILE)")
+            appendLine("Last Action       : ${tileDiagnostics.lastAction} at ${tileDiagnostics.lastActionTime}")
+            tileDiagnostics.lastLatencyMs?.let { appendLine("Last Latency      : ${it}ms") }
+            appendLine("==================================================")
+            appendLine("                      LOGS                        ")
+            appendLine("==================================================")
+            telemetryLogs.reversed().forEach { entry ->
+                appendLine(entry.toFormattedString())
+            }
+        }
     }
 
     val createDocumentLauncher = rememberLauncherForActivityResult(
@@ -1053,10 +1081,10 @@ fun SleekLogsTabContent(
         uri?.let {
             try {
                 context.contentResolver.openOutputStream(it)?.use { os ->
-                    os.write(logsText.toByteArray())
+                    os.write(exportText.toByteArray())
                 }
-                Toast.makeText(context, "Logs exported successfully!", Toast.LENGTH_SHORT).show()
-                viewModel.addLog("Exported logs to file.")
+                Toast.makeText(context, "Telemetry report exported successfully!", Toast.LENGTH_SHORT).show()
+                viewModel.addLog("Exported telemetry report to file.", category = LogCategory.SYSTEM)
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to export logs: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -1066,100 +1094,367 @@ fun SleekLogsTabContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = 20.dp)
     ) {
-        Text(
-            text = "ACTION LOGS & CONSOLE",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = colors.textMuted,
-            letterSpacing = 1.2.sp
-        )
+        // 1. LIVE QUICK TILE MONITOR CARD
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (tileDiagnostics.lastState.contains("ACTIVE")) colors.accentRose.copy(alpha = 0.5f)
+                else if (colors.isDark) colors.glowColor else colors.border
+            )
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.accentCyan.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FlashOn,
+                                contentDescription = "Quick Tile",
+                                tint = colors.accentCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "QUICK TILE REAL-TIME MONITOR",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textMuted,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = "SensorsOffTileService (ACTIVE_TILE)",
+                                fontSize = 10.sp,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (tileDiagnostics.isListening) colors.accentGreen.copy(alpha = 0.15f)
+                                else colors.accentBlue.copy(alpha = 0.12f)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (tileDiagnostics.isListening) "SHADE OPEN" else "STANDBY",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (tileDiagnostics.isListening) colors.accentGreen else colors.accentBlue
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Tile Diagnostics Grid
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // State Card
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (colors.isDark) Color(0xFF141923) else Color(0xFFF1F5F9))
+                            .padding(8.dp)
+                    ) {
+                        Column {
+                            Text("Current State", fontSize = 9.sp, color = colors.textMuted)
+                            Text(
+                                text = if (tileDiagnostics.lastState.contains("ACTIVE")) "ACTIVE (Blocked)" else "INACTIVE (On)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (tileDiagnostics.lastState.contains("ACTIVE")) colors.accentRose else colors.accentGreen
+                            )
+                        }
+                    }
+
+                    // Mode Card
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (colors.isDark) Color(0xFF141923) else Color(0xFFF1F5F9))
+                            .padding(8.dp)
+                    ) {
+                        Column {
+                            Text("Block Mode", fontSize = 9.sp, color = colors.textMuted)
+                            Text(
+                                text = if (tileDiagnostics.blockMode == "cam_mic") "Camera + Mic" else "All Sensors",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                        }
+                    }
+
+                    // Latency Card
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (colors.isDark) Color(0xFF141923) else Color(0xFFF1F5F9))
+                            .padding(8.dp)
+                    ) {
+                        Column {
+                            Text("IPC Latency", fontSize = 9.sp, color = colors.textMuted)
+                            Text(
+                                text = tileDiagnostics.lastLatencyMs?.let { "${it}ms" } ?: "--",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accentCyan
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Last Event: ${tileDiagnostics.lastAction}",
+                        fontSize = 10.sp,
+                        color = colors.textSecondary
+                    )
+                    Text(
+                        text = "Time: ${tileDiagnostics.lastActionTime}",
+                        fontSize = 10.sp,
+                        color = colors.textMuted
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 2. CATEGORY FILTER CHIPS
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            LogCategory.values().forEach { category ->
+                val isSelected = uiState.selectedLogCategory == category
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) colors.accentBlue else if (colors.isDark) Color(0xFF1A2230) else Color(0xFFE2E8F0))
+                        .clickable { viewModel.setLogCategoryFilter(category) }
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = category.badgeText,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else colors.textSecondary
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Log Control Buttons Header
+        // 3. ACTION CONTROLS (COPY, EXPORT, CLEAR)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Copy Logs Button
             Button(
                 onClick = {
-                    if (logsText.isNotBlank()) {
-                        clipboardManager.setText(AnnotatedString(logsText))
-                        Toast.makeText(context, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show()
-                        viewModel.addLog("Copied logs console to clipboard.")
+                    if (exportText.isNotBlank()) {
+                        clipboardManager.setText(AnnotatedString(exportText))
+                        Toast.makeText(context, "Full telemetry report copied!", Toast.LENGTH_SHORT).show()
+                        viewModel.addLog("Copied telemetry report to clipboard.", category = LogCategory.SYSTEM)
                     }
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
                 shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 12.dp)
+                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 8.dp)
             ) {
-                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Copy Logs", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Copy Report", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
 
-            // Export Logs Button
             Button(
                 onClick = {
                     val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-                    createDocumentLauncher.launch("sensorsoff_logs_$timeStamp.txt")
+                    createDocumentLauncher.launch("sensorsoff_telemetry_$timeStamp.txt")
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan),
                 shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 12.dp)
+                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 8.dp)
             ) {
-                Icon(imageVector = Icons.Default.Download, contentDescription = "Export", modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Export", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Icon(imageVector = Icons.Default.Download, contentDescription = "Export", modifier = Modifier.size(15.dp), tint = Color(0xFF0F172A))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Export TXT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
             }
 
-            // Clear Console Button
             OutlinedButton(
                 onClick = { viewModel.clearLogs() },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(0.9f),
                 shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 12.dp)
+                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 8.dp)
             ) {
-                Icon(imageVector = Icons.Default.Delete, contentDescription = "Clear", modifier = Modifier.size(16.dp), tint = colors.accentRose)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Clear", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.accentRose)
+                Icon(imageVector = Icons.Default.Delete, contentDescription = "Clear", modifier = Modifier.size(15.dp), tint = colors.accentRose)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accentRose)
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
+        // 4. DEEP LOGS CONSOLE
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = 24.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .padding(bottom = 20.dp)
+                .clip(RoundedCornerShape(16.dp))
                 .background(colors.cardBg)
-                .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(20.dp))
-                .padding(16.dp)
+                .border(1.dp, if (colors.isDark) colors.glowColor else colors.border, RoundedCornerShape(16.dp))
+                .padding(12.dp)
         ) {
-            if (uiState.logs.isEmpty()) {
-                Text(
-                    text = "[ SYSTEM TELEMETRY EMPTY ]",
-                    fontSize = 12.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    color = colors.textMuted
-                )
+            if (filteredLogs.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "[ NO ${uiState.selectedLogCategory.displayName.uppercase()} LOGS ]",
+                        fontSize = 11.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = colors.textMuted
+                    )
+                }
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(uiState.logs) { log ->
-                        Text(
-                            text = log,
-                            fontSize = 12.sp,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = if (log.contains("Error") || log.contains("DENIED")) colors.accentRose else colors.accentCyan
-                        )
+                    items(filteredLogs, key = { it.id }) { entry ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (colors.isDark) Color(0xFF131822) else Color(0xFFF8FAFC))
+                                .padding(10.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Category Tag Badge
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(
+                                                    when (entry.category) {
+                                                        LogCategory.TILE -> colors.accentCyan.copy(alpha = 0.2f)
+                                                        LogCategory.PRIVILEGE -> colors.accentBlue.copy(alpha = 0.2f)
+                                                        LogCategory.SENSOR -> colors.accentGreen.copy(alpha = 0.2f)
+                                                        else -> colors.textMuted.copy(alpha = 0.2f)
+                                                    }
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = entry.category.badgeText,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = when (entry.category) {
+                                                    LogCategory.TILE -> colors.accentCyan
+                                                    LogCategory.PRIVILEGE -> colors.accentBlue
+                                                    LogCategory.SENSOR -> colors.accentGreen
+                                                    else -> colors.textMuted
+                                                }
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        // Time
+                                        Text(
+                                            text = entry.formattedTime,
+                                            fontSize = 10.sp,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            color = colors.textMuted
+                                        )
+                                    }
+
+                                    entry.executionMs?.let { latency ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(colors.accentCyan.copy(alpha = 0.15f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${latency}ms",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                color = colors.accentCyan
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                // Title
+                                Text(
+                                    text = entry.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = when (entry.level) {
+                                        LogLevel.ERROR -> colors.accentRose
+                                        LogLevel.WARN -> Color(0xFFF59E0B)
+                                        LogLevel.SUCCESS -> colors.accentGreen
+                                        else -> colors.textPrimary
+                                    }
+                                )
+
+                                // Deep Technical Detail
+                                if (entry.detail.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = entry.detail,
+                                        fontSize = 10.sp,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = colors.textSecondary,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

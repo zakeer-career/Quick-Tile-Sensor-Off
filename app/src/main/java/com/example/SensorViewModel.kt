@@ -48,6 +48,7 @@ data class SensorUiState(
     val androidVersion: String = Build.VERSION.RELEASE,
     val appThemeMode: String = "system",
     val appLauncherAlias: String = "MainActivityDefault",
+    val selectedLogCategory: LogCategory = LogCategory.ALL,
     val logs: List<String> = emptyList(),
     val tileSettings: TileSettingsState = TileSettingsState(),
     val sensorList: List<SensorItem> = listOf(
@@ -65,21 +66,24 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(SensorUiState())
     val uiState: StateFlow<SensorUiState> = _uiState.asStateFlow()
 
+    val telemetryLogs: StateFlow<List<LogEntry>> = TileLogManager.logsFlow
+    val tileDiagnostics: StateFlow<TileDiagnostics> = TileLogManager.diagnosticsFlow
+
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == ShizukuManager.SHIZUKU_REQ_CODE) {
             val isGranted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
-            addLog("Shizuku Permission Result: ${if (isGranted) "GRANTED" else "DENIED"}")
+            addLog("Shizuku Permission Result: ${if (isGranted) "GRANTED" else "DENIED"}", category = LogCategory.PRIVILEGE, level = if (isGranted) LogLevel.SUCCESS else LogLevel.WARN)
             refreshState()
         }
     }
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
-        addLog("Shizuku binder connected. Checking permissions...")
+        addLog("Shizuku binder connected. Checking permissions...", category = LogCategory.PRIVILEGE)
         checkAndRequestShizukuPermission()
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        addLog("Shizuku binder disconnected.")
+        addLog("Shizuku binder disconnected.", category = LogCategory.PRIVILEGE, level = LogLevel.WARN)
         refreshState()
     }
 
@@ -88,14 +92,17 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             super.onChange(selfChange)
             val context = getApplication<Application>().applicationContext
             val isOff = ShizukuManager.getSensorsOffState(context)
-            addLog("Detected system sensor privacy change -> SensorsOff = $isOff")
+            addLog("Detected system sensor privacy change -> SensorsOff = $isOff", category = LogCategory.SYSTEM)
+            TileLogManager.logSystemEvent(context, "System Privacy State Change", "ContentObserver triggered | sensors_off = $isOff")
             refreshState()
         }
     }
 
     init {
         val context = application.applicationContext
-        addLog("SensorsOff initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
+        TileLogManager.initialize(context)
+        addLog("SensorsOff initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})", category = LogCategory.SYSTEM)
+        TileLogManager.logSystemEvent(context, "Engine Startup", "SensorsOff v2.0 initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
 
         // Asynchronously load states and setup listeners without blocking Main Thread startup
         viewModelScope.launch(Dispatchers.IO) {
@@ -332,21 +339,29 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setLogCategoryFilter(category: LogCategory) {
+        _uiState.update { it.copy(selectedLogCategory = category) }
+    }
+
     fun clearLogs() {
+        val context = getApplication<Application>().applicationContext
+        TileLogManager.clear(context)
         _uiState.update { it.copy(logs = emptyList()) }
-        addLog("Console logs cleared.")
     }
 
     fun requestShizukuPermission() {
+        val context = getApplication<Application>().applicationContext
         if (ShizukuManager.isShizukuRunning()) {
             if (!ShizukuManager.isShizukuAuthorized()) {
-                addLog("Requesting Shizuku authorization...")
+                addLog("Requesting Shizuku authorization...", category = LogCategory.PRIVILEGE)
+                TileLogManager.logPrivilegeEvent(context, "Shizuku Auth Requested", "Prompting user for Shizuku IPC permission")
                 ShizukuManager.requestShizukuPermission()
             } else {
-                addLog("Shizuku is already authorized.")
+                addLog("Shizuku is already authorized.", category = LogCategory.PRIVILEGE, level = LogLevel.SUCCESS)
             }
         } else {
-            addLog("Shizuku service is not running. Please start Shizuku app first.")
+            addLog("Shizuku service is not running. Please start Shizuku app first.", category = LogCategory.PRIVILEGE, level = LogLevel.WARN)
+            TileLogManager.logPrivilegeEvent(context, "Shizuku Not Running", "Shizuku IPC binder ping returned false", LogLevel.WARN)
         }
         viewModelScope.launch {
             delay(500)
@@ -354,11 +369,13 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun addLog(msg: String) {
+    fun addLog(msg: String, category: LogCategory = LogCategory.SYSTEM, level: LogLevel = LogLevel.INFO) {
+        val context = getApplication<Application>().applicationContext
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         _uiState.update { state ->
-            val updatedLogs = (listOf("[$timestamp] $msg") + state.logs).take(30)
+            val updatedLogs = (listOf("[$timestamp] $msg") + state.logs).take(40)
             state.copy(logs = updatedLogs)
         }
+        TileLogManager.log(context, category, level, msg)
     }
 }
