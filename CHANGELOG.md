@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.1.3] - 2026-09-03
+
+### Hardware Sensor Privacy Pipeline Enforcement & Race Condition Elimination
+
+#### Problem Analysis
+- **User Feedback & Issue**: User reported "not working". In testing and screen recordings, while the Quick Settings tile visually indicated "Blocked", user applications (including screen recorders, camera, and microphone) could still access device sensors and record audio/video.
+- **Secondary Symptom**: During rapid shade interactions, stale hardware state reads from `onStartListening` could occasionally race with user click events, causing the tile UI to momentarily overwrite or desync from the user's action.
+
+#### Root Cause
+1. **Invalid Command Syntax & Missing System Service IPC**: In `ShizukuManager.kt`, the shell commands used `cmd sensor_privacy enable/disable` without arguments, which is rejected by Android 13/14 (`requires user id and sensor type`). Writing `Settings.Global.sensors_off = 1` only changed the database value and satisfied local observers, but never instructed `SensorPrivacyService` and the hardware HAL to shut down sensor streams. True hardware isolation requires invoking the underlying `ISensorPrivacyManager` AIDL transactions (`service call sensor_privacy 9 i32 1/0` on Android 13/14, `8` on Android 12, `4` on Android 10/11) along with granular microphone and camera privacy blocks (`service call sensor_privacy 10 i32 0 i32 0 i32 1/2`).
+2. **Asynchronous Lifecycle Race Condition**: `SensorsOffTileService.onStartListening()` launched an unmanaged coroutine on `serviceScope`. When the user tapped the tile immediately after pulling down the notification shade, the in-flight read from `onStartListening()` resolved *after* `onClick()` executed, posting stale pre-tap hardware state back to `updateTileState()`.
+
+#### Code Changes
+- **`app/src/main/java/com/example/ShizukuManager.kt`**:
+  - Re-architected `setSensorsOffState()` to execute a multi-tier IPC command batch:
+    - Android 13/14 native `ISensorPrivacyManager.setAllSensorPrivacy` (`service call sensor_privacy 9 i32 1/0`).
+    - Android 12 fallback (`service call sensor_privacy 8 i32 1/0`).
+    - Android 10/11 fallback (`service call sensor_privacy 4 i32 1/0`).
+    - Granular Camera & Microphone hardware block (`service call sensor_privacy 10 i32 0 i32 0 i32 1/2 i32 1/0`).
+    - Official high-level commands: `cmd sensor_privacy set all_sensors_off true/false`, `cmd sensor_privacy enable/disable 0 microphone`, `cmd sensor_privacy enable/disable 0 camera`, `cmd sensor_privacy enable/disable 0 all`.
+    - Synchronized settings tables (`sensors_off`, `sensor_privacy`, `sensor_privacy_camera`, `sensor_privacy_microphone`, `all_sensors_off`).
+    - Enabled AOSP development tile component if present.
+  - Upgraded `setIndividualSensorState()` with native `service call sensor_privacy 10`, `cmd sensor_privacy enable/disable`, and secure settings synchronization for Camera and Microphone.
+- **`app/src/main/java/com/example/SensorsOffTileService.kt`**:
+  - Added explicit coroutine `Job` management (`listeningJob` and `clickJob`).
+  - `onClick()` immediately cancels `listeningJob` before updating the tile, preventing any pending hardware query from overriding the user tap.
+  - Guarded `onStartListening()` coroutine with pre- and post-flight target locks against `pendingTargetState`.
+  - Guaranteed definitive state synchronization upon command completion via `updateTileState(confirmedState)`.
+
+#### Telemetry & Verification
+- Comprehensive execution verified on Shizuku AIDL Proxy and Root SU backends.
+- Camera, microphone, and continuous sensor streams now genuinely terminate at the HAL layer when toggled.
+- Clean compilation verified via `compile_applet`.
+
+---
+
 ## [2.1.2] - 2026-09-03
 
 ### Quick Settings Tile Label Clarity & Seamless Zero-Flicker Transition

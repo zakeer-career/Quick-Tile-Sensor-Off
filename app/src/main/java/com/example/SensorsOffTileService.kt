@@ -29,6 +29,8 @@ class SensorsOffTileService : TileService() {
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var listeningJob: kotlinx.coroutines.Job? = null
+    private var clickJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -69,6 +71,9 @@ class SensorsOffTileService : TileService() {
         val startTime = System.currentTimeMillis()
         Log.d(TAG, "Tile entered onStartListening")
 
+        // Cancel any pending listening job
+        listeningJob?.cancel()
+
         // If user tapped recently within lock window, preserve optimistic state with 0ms sync
         val now = System.currentTimeMillis()
         if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
@@ -80,7 +85,7 @@ class SensorsOffTileService : TileService() {
         refreshTileImmediately()
 
         // 2. Asynchronous verification of live hardware state
-        serviceScope.launch {
+        listeningJob = serviceScope.launch {
             try {
                 val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
                 val label = ShizukuManager.getTileLabelText(applicationContext)
@@ -91,6 +96,11 @@ class SensorsOffTileService : TileService() {
                             ShizukuManager.getIndividualSensorState(applicationContext, "mic")
                 } else {
                     ShizukuManager.getSensorsOffState(applicationContext)
+                }
+
+                // If user tapped during our hardware query, abort immediately so we don't overwrite optimistic UI
+                if (pendingTargetState != null && System.currentTimeMillis() < pendingTargetExpiryTimeMs) {
+                    return@launch
                 }
 
                 val latency = System.currentTimeMillis() - startTime
@@ -116,16 +126,20 @@ class SensorsOffTileService : TileService() {
                 )
 
                 withContext(Dispatchers.Main) {
-                    updateTileState(isSensorsOff)
+                    if (pendingTargetState == null || System.currentTimeMillis() >= pendingTargetExpiryTimeMs) {
+                        updateTileState(isSensorsOff)
+                    }
                 }
             } catch (e: Throwable) {
-                Log.e(TAG, "Error checking live sensor state in onStartListening", e)
-                TileLogManager.logTileEvent(
-                    applicationContext,
-                    "Listening Sync Error",
-                    "Exception during hardware state check: ${e.message}",
-                    LogLevel.ERROR
-                )
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e(TAG, "Error checking live sensor state in onStartListening", e)
+                    TileLogManager.logTileEvent(
+                        applicationContext,
+                        "Listening Sync Error",
+                        "Exception during hardware state check: ${e.message}",
+                        LogLevel.ERROR
+                    )
+                }
             }
         }
     }
@@ -170,6 +184,9 @@ class SensorsOffTileService : TileService() {
         val clickTime = System.currentTimeMillis()
         Log.d(TAG, "Tile clicked! Initiating asynchronous sensor toggle...")
 
+        // Immediately abort any background query from onStartListening so it cannot overwrite the UI
+        listeningJob?.cancel()
+
         val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
         val current = if (blockMode == "cam_mic") {
             ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
@@ -194,7 +211,8 @@ class SensorsOffTileService : TileService() {
         // Instant optimistic tile update so user feels immediate response (0ms)
         updateTileState(target)
 
-        serviceScope.launch {
+        clickJob?.cancel()
+        clickJob = serviceScope.launch {
             val executionStartTime = System.currentTimeMillis()
             val backendUsed: String
 
@@ -257,12 +275,8 @@ class SensorsOffTileService : TileService() {
                 blockMode = blockMode
             )
 
-            // Only update the tile again if the confirmed hardware state differs from our optimistic target
-            // This completely eliminates any visual flicker or snap-back in SystemUI Quick Settings
-            if (confirmedState != target) {
-                withContext(Dispatchers.Main) {
-                    updateTileState(confirmedState)
-                }
+            withContext(Dispatchers.Main) {
+                updateTileState(confirmedState)
             }
         }
     }
@@ -275,6 +289,8 @@ class SensorsOffTileService : TileService() {
             "SensorsOffTileService lifecycle unbound by SystemUI",
             LogLevel.DEBUG
         )
+        listeningJob?.cancel()
+        clickJob?.cancel()
         serviceScope.cancel()
     }
 

@@ -130,14 +130,57 @@ object ShizukuManager {
             }
         }
 
-        // 2. Primary Execution: Shizuku privileged shell
-        val fastCommand = "cmd sensor_privacy ${if (turnOff) "enable" else "disable"} ; cmd sensor_privacy set-sensor-state 0 1 $turnOff 2>/dev/null ; cmd sensor_privacy set-sensor-state 0 2 $turnOff 2>/dev/null ; settings put global sensors_off $targetValue ; settings put secure sensor_privacy $targetValue"
+        // 2. Build comprehensive, multi-layered commands to genuinely disable hardware sensors via SensorPrivacyService:
+        // - Android 13/14 native ISensorPrivacyManager.setAllSensorPrivacy (Transaction 9)
+        // - Android 12 fallback (Transaction 8)
+        // - Android 10/11 fallback (Transaction 4)
+        // - Granular Camera & Microphone hardware block (Transaction 10)
+        // - Native cmd sensor_privacy commands
+        // - Framework settings sync
+        val cmdList = mutableListOf<String>()
+        if (turnOff) {
+            cmdList.add("service call sensor_privacy 9 i32 1")
+            cmdList.add("service call sensor_privacy 8 i32 1")
+            cmdList.add("service call sensor_privacy 4 i32 1")
+            cmdList.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 1")
+            cmdList.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 1")
+            cmdList.add("cmd sensor_privacy set all_sensors_off true 2>/dev/null")
+            cmdList.add("cmd sensor_privacy enable 0 microphone 2>/dev/null")
+            cmdList.add("cmd sensor_privacy enable 0 camera 2>/dev/null")
+            cmdList.add("cmd sensor_privacy enable 0 all 2>/dev/null")
+            cmdList.add("cmd sensor_privacy set-sensor-state 0 1 true 2>/dev/null")
+            cmdList.add("cmd sensor_privacy set-sensor-state 0 2 true 2>/dev/null")
+            cmdList.add("settings put global sensors_off 1")
+            cmdList.add("settings put secure sensor_privacy 1")
+            cmdList.add("settings put secure sensor_privacy_camera 1")
+            cmdList.add("settings put secure sensor_privacy_microphone 1")
+            cmdList.add("settings put global all_sensors_off 1")
+            cmdList.add("pm enable com.android.settings/.development.qstile.DevelopmentTiles\\\$SensorsOff 2>/dev/null")
+        } else {
+            cmdList.add("service call sensor_privacy 9 i32 0")
+            cmdList.add("service call sensor_privacy 8 i32 0")
+            cmdList.add("service call sensor_privacy 4 i32 0")
+            cmdList.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 0")
+            cmdList.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 0")
+            cmdList.add("cmd sensor_privacy set all_sensors_off false 2>/dev/null")
+            cmdList.add("cmd sensor_privacy disable 0 microphone 2>/dev/null")
+            cmdList.add("cmd sensor_privacy disable 0 camera 2>/dev/null")
+            cmdList.add("cmd sensor_privacy disable 0 all 2>/dev/null")
+            cmdList.add("cmd sensor_privacy set-sensor-state 0 1 false 2>/dev/null")
+            cmdList.add("cmd sensor_privacy set-sensor-state 0 2 false 2>/dev/null")
+            cmdList.add("settings put global sensors_off 0")
+            cmdList.add("settings put secure sensor_privacy 0")
+            cmdList.add("settings put secure sensor_privacy_camera 0")
+            cmdList.add("settings put secure sensor_privacy_microphone 0")
+            cmdList.add("settings put global all_sensors_off 0")
+        }
+        val fastCommand = cmdList.joinToString(" ; ")
 
         if (isShizukuRunning() && isShizukuAuthorized()) {
             try {
                 runShizukuCommand(fastCommand)
                 executedSuccessfully = true
-                Log.d(TAG, "Executed fast SensorPrivacy commands via Shizuku shell successfully")
+                Log.d(TAG, "Executed comprehensive SensorPrivacy IPC commands via Shizuku shell successfully")
             } catch (e: Throwable) {
                 Log.e(TAG, "Shizuku execution failed", e)
             }
@@ -148,7 +191,7 @@ object ShizukuManager {
             try {
                 runRootCommand(fastCommand)
                 executedSuccessfully = true
-                Log.d(TAG, "Executed fast SensorPrivacy commands via Root SU successfully")
+                Log.d(TAG, "Executed comprehensive SensorPrivacy IPC commands via Root SU successfully")
             } catch (e: Throwable) {
                 Log.e(TAG, "Root SU execution failed", e)
             }
@@ -183,14 +226,18 @@ object ShizukuManager {
 
         when (sensorId.lowercase()) {
             "camera" -> {
+                commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 ${if (turnOff) 1 else 0}")
+                commands.add("cmd sensor_privacy ${if (turnOff) "enable" else "disable"} 0 camera 2>/dev/null")
                 commands.add("cmd sensor_privacy set-sensor-state 0 camera $turnOff 2>/dev/null")
                 commands.add("cmd sensor_privacy set-sensor-state 0 2 $turnOff 2>/dev/null")
-                commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 ${if (turnOff) 1 else 0}")
+                commands.add("settings put secure sensor_privacy_camera ${if (turnOff) 1 else 0}")
             }
             "mic", "microphone" -> {
+                commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 ${if (turnOff) 1 else 0}")
+                commands.add("cmd sensor_privacy ${if (turnOff) "enable" else "disable"} 0 microphone 2>/dev/null")
                 commands.add("cmd sensor_privacy set-sensor-state 0 mic $turnOff 2>/dev/null")
                 commands.add("cmd sensor_privacy set-sensor-state 0 1 $turnOff 2>/dev/null")
-                commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 ${if (turnOff) 1 else 0}")
+                commands.add("settings put secure sensor_privacy_microphone ${if (turnOff) 1 else 0}")
             }
             else -> {
                 commands.add("cmd sensor_privacy set-sensor-state 0 $turnOff 2>/dev/null")
