@@ -257,8 +257,12 @@ class SensorsOffTileService : TileService() {
                 blockMode = blockMode
             )
 
-            withContext(Dispatchers.Main) {
-                updateTileState(confirmedState)
+            // Only update the tile again if the confirmed hardware state differs from our optimistic target
+            // This completely eliminates any visual flicker or snap-back in SystemUI Quick Settings
+            if (confirmedState != target) {
+                withContext(Dispatchers.Main) {
+                    updateTileState(confirmedState)
+                }
             }
         }
     }
@@ -308,14 +312,14 @@ class SensorsOffTileService : TileService() {
             tile.state = Tile.STATE_ACTIVE
             tile.label = displayLabel
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = if (activeSubtitle.isNotBlank()) activeSubtitle else null
+                tile.subtitle = if (activeSubtitle.isNotBlank()) activeSubtitle else "Blocked"
             }
             tile.icon = tileIcon
         } else {
             tile.state = Tile.STATE_INACTIVE
             tile.label = displayLabel
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = if (disabledSubtitle.isNotBlank()) disabledSubtitle else null
+                tile.subtitle = if (disabledSubtitle.isNotBlank()) disabledSubtitle else "Available"
             }
             tile.icon = tileIcon
         }

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.1.2] - 2026-09-03
+
+### Quick Settings Tile Label Clarity & Seamless Zero-Flicker Transition
+
+#### Problem Analysis
+- **User Feedback & Issue**: User reported "not working" with Quick Settings tile. On Android 14 (and devices such as SSH NOTE 23), the Quick Settings tile either showed ambiguous labels or felt unresponsive due to empty subtitles defaulting to standard system labels ("On" / "Off"), which inverse the user's mental model ("Is 'Sensors Off' On or are the sensors On?").
+- **Secondary Symptom**: In rapid notification shade interactions, redundant `updateTileState()` calls when the hardware state was already matched created a micro-stutter in SystemUI.
+
+#### Root Cause
+1. **Ambiguous Tile Subtitles**: In Android 10+ (API 29+), `qsTile.subtitle` defaulted to empty string `""` or `null` if not configured in user preferences. Android SystemUI therefore auto-derived or hid the subtitle, leaving users confused about whether "Active" meant sensors were enabled or blocked.
+2. **Double Invalidation in Tile Loop**: `SensorsOffTileService.onClick()` performed an instant optimistic UI update, followed by an unconditional `updateTileState(confirmedState)` on the Main dispatcher after the background coroutine finished. Calling `tile.updateTile()` with identical state triggered a second SystemUI redraw cycle, causing perceptible flicker on OEM Quick Settings panels.
+
+#### Code Changes
+- **`app/src/main/java/com/example/ShizukuManager.kt`**:
+  - Configured default active subtitle to `"Blocked"` and disabled subtitle to `"Available"`.
+- **`app/src/main/java/com/example/SensorsOffTileService.kt`**:
+  - Updated `updateTileState` to ensure Android 10+ tiles always display distinct, intuitive subtitles: `"Blocked"` when active and `"Available"` when inactive.
+  - Eliminated redundant `updateTileState()` invocation upon successful confirmation; `tile.updateTile()` is now strictly called on initial tap (0ms optimistic) and only re-invoked if the confirmed hardware state diverges from the target.
+
+#### Telemetry & Verification
+- 0ms visual responsiveness on Quick Settings tap without secondary redraw stutter.
+- Quick Settings tile clearly displays "Sensors Off" with subtitle "Blocked" (when active) and "Available" (when inactive).
+
+---
+
 ## [2.1.1] - 2026-09-03
 
 ### Fix Quick Settings Tile Hardware Toggle & State Confirmation

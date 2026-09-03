@@ -282,12 +282,12 @@ object ShizukuManager {
 
     fun getTileActiveSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("tile_active_subtitle", "") ?: ""
+        return prefs.getString("tile_active_subtitle", "Blocked") ?: "Blocked"
     }
 
     fun getTileDisabledSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("tile_disabled_subtitle", "") ?: ""
+        return prefs.getString("tile_disabled_subtitle", "Available") ?: "Available"
     }
 
     fun getTileBlockMode(context: Context): String {
