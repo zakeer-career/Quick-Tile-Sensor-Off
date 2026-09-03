@@ -45,6 +45,56 @@ object ShizukuManager {
     @Volatile
     private var cachedRootAvailable: Boolean? = null
 
+    @Volatile private var cachedMethodGlobalPrivacy: java.lang.reflect.Method? = null
+    @Volatile private var cachedMethodAllSensorPrivacy: java.lang.reflect.Method? = null
+    @Volatile private var cachedMethodSensorPrivacyInt: java.lang.reflect.Method? = null
+    @Volatile private var spmReflectionInitialized = false
+
+    private fun initSpmReflection(cls: Class<*>) {
+        if (spmReflectionInitialized) return
+        synchronized(this) {
+            if (spmReflectionInitialized) return
+            try {
+                cachedMethodGlobalPrivacy = cls.methods.firstOrNull { it.name == "isSensorPrivacyEnabled" && it.parameterTypes.isEmpty() }?.apply { isAccessible = true }
+                cachedMethodAllSensorPrivacy = cls.methods.firstOrNull { it.name == "isAllSensorPrivacyEnabled" && it.parameterTypes.isEmpty() }?.apply { isAccessible = true }
+                cachedMethodSensorPrivacyInt = cls.methods.firstOrNull {
+                    it.name == "isSensorPrivacyEnabled" &&
+                    it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType
+                }?.apply { isAccessible = true }
+            } catch (t: Throwable) {
+                Log.d(TAG, "SPM reflection init note: ${t.message}")
+            }
+            spmReflectionInitialized = true
+        }
+    }
+
+    @Volatile private var cachedShizukuNewProcessMethod: java.lang.reflect.Method? = null
+    @Volatile private var shizukuReflectionInitialized = false
+
+    private fun getShizukuNewProcessMethod(): java.lang.reflect.Method? {
+        if (shizukuReflectionInitialized) return cachedShizukuNewProcessMethod
+        synchronized(this) {
+            if (shizukuReflectionInitialized) return cachedShizukuNewProcessMethod
+            try {
+                val m = Shizuku::class.java.declaredMethods.firstOrNull {
+                    it.name == "newProcess" && it.parameterTypes.size == 3
+                } ?: Shizuku::class.java.getDeclaredMethod(
+                    "newProcess",
+                    Array<String>::class.java,
+                    Array<String>::class.java,
+                    String::class.java
+                )
+                m.isAccessible = true
+                cachedShizukuNewProcessMethod = m
+            } catch (t: Throwable) {
+                Log.w(TAG, "Shizuku reflection method lookup failed: ${t.message}")
+            }
+            shizukuReflectionInitialized = true
+            return cachedShizukuNewProcessMethod
+        }
+    }
+
     fun isRootAvailable(): Boolean {
         cachedRootAvailable?.let { return it }
         val hasSuBinary = try {
@@ -274,9 +324,10 @@ object ShizukuManager {
         return executedSuccessfully
     }
 
-    fun getIndividualSensorState(context: Context, sensorId: String): Boolean {
+    fun getIndividualSensorState(context: Context, sensorId: String, knownGlobalState: Boolean? = null): Boolean {
         // If all sensors are off globally, this sensor is off
-        if (getSensorsOffState(context)) {
+        val globalOff = knownGlobalState ?: getSensorsOffState(context)
+        if (globalOff) {
             return true
         }
 
@@ -284,12 +335,8 @@ object ShizukuManager {
         try {
             val spm = context.getSystemService("sensor_privacy")
             if (spm != null) {
-                val cls = spm.javaClass
-                val mSensor = cls.methods.firstOrNull {
-                    it.name == "isSensorPrivacyEnabled" &&
-                    it.parameterTypes.size == 1 &&
-                    it.parameterTypes[0] == Int::class.javaPrimitiveType
-                }
+                initSpmReflection(spm.javaClass)
+                val mSensor = cachedMethodSensorPrivacyInt
                 if (mSensor != null) {
                     if (sensorId.equals("camera", ignoreCase = true)) {
                         val cam = mSensor.invoke(spm, 2) as? Boolean
@@ -334,12 +381,23 @@ object ShizukuManager {
 
     fun getTileDisabledSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("tile_disabled_subtitle", "Available") ?: "Available"
+        val text = prefs.getString("tile_disabled_subtitle", "Off") ?: "Off"
+        return if (text.isBlank() || text.equals("Available", ignoreCase = true)) "Off" else text
     }
 
     fun getTileBlockMode(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
         return prefs.getString("tile_block_mode", "global") ?: "global"
+    }
+
+    fun getShowExperimentalToggles(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("show_experimental_sensor_toggles", false)
+    }
+
+    fun setShowExperimentalToggles(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("show_experimental_sensor_toggles", enabled).apply()
     }
 
     fun getCustomIconPath(context: Context): String? {
@@ -538,35 +596,28 @@ object ShizukuManager {
     }
 
     fun getSensorsOffState(context: Context): Boolean {
-        // Layer 1: Check native Android SensorPrivacyManager directly via reflection
+        // Layer 1: Check native Android SensorPrivacyManager directly via cached reflection
         try {
             val spm = context.getSystemService("sensor_privacy")
             if (spm != null) {
-                val cls = spm.javaClass
+                initSpmReflection(spm.javaClass)
                 
                 // 1. isSensorPrivacyEnabled()
-                val mGlobal = cls.methods.firstOrNull { it.name == "isSensorPrivacyEnabled" && it.parameterTypes.isEmpty() }
-                if (mGlobal != null) {
-                    val res = mGlobal.invoke(spm) as? Boolean
+                cachedMethodGlobalPrivacy?.let { m ->
+                    val res = m.invoke(spm) as? Boolean
                     if (res == true) return true
                 }
                 
                 // 2. isAllSensorPrivacyEnabled()
-                val mAll = cls.methods.firstOrNull { it.name == "isAllSensorPrivacyEnabled" && it.parameterTypes.isEmpty() }
-                if (mAll != null) {
-                    val res = mAll.invoke(spm) as? Boolean
+                cachedMethodAllSensorPrivacy?.let { m ->
+                    val res = m.invoke(spm) as? Boolean
                     if (res == true) return true
                 }
 
                 // 3. isSensorPrivacyEnabled(int sensor) - 1: Mic, 2: Camera
-                val mSensor = cls.methods.firstOrNull {
-                    it.name == "isSensorPrivacyEnabled" &&
-                    it.parameterTypes.size == 1 &&
-                    it.parameterTypes[0] == Int::class.javaPrimitiveType
-                }
-                if (mSensor != null) {
-                    val mic = mSensor.invoke(spm, 1) as? Boolean
-                    val cam = mSensor.invoke(spm, 2) as? Boolean
+                cachedMethodSensorPrivacyInt?.let { m ->
+                    val mic = m.invoke(spm, 1) as? Boolean
+                    val cam = m.invoke(spm, 2) as? Boolean
                     if (mic == true && cam == true) return true
                 }
             }
@@ -626,15 +677,7 @@ object ShizukuManager {
 
     private fun runShizukuCommand(command: String): String {
         return try {
-            val targetMethod = Shizuku::class.java.declaredMethods.firstOrNull { 
-                it.name == "newProcess" && it.parameterTypes.size == 3 
-            } ?: Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
-            targetMethod.isAccessible = true
+            val targetMethod = getShizukuNewProcessMethod() ?: return ""
             val process = targetMethod.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
             val output = StringBuilder()
             process.inputStream.bufferedReader().use { reader ->

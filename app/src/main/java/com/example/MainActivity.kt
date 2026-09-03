@@ -111,7 +111,7 @@ fun SensorsOffSleekApp(viewModel: SensorViewModel) {
             when (selectedTab) {
                 SleekTab.HOME -> SleekHomeTabContent(viewModel = viewModel, uiState = uiState)
                 SleekTab.LOGS -> SleekLogsTabContent(viewModel = viewModel, uiState = uiState)
-                SleekTab.ABOUT -> SleekAboutTabContent(uiState = uiState)
+                SleekTab.ABOUT -> SleekAboutTabContent(uiState = uiState, viewModel = viewModel)
             }
         }
     }
@@ -236,25 +236,56 @@ fun SleekHomeTabContent(
             )
         }
 
-        // Monitored Sensors List Header
-        item {
-            Text(
-                text = "MONITORED HARDWARE SENSORS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.textMuted,
-                letterSpacing = 1.2.sp,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-
-        items(uiState.sensorList) { sensor ->
-            SleekSensorRow(
-                sensor = sensor,
-                onToggleSensor = { sensorId ->
-                    viewModel.toggleIndividualSensor(sensorId)
+        if (uiState.showExperimentalToggles) {
+            // Monitored Sensors List Header (Experimental Mode)
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "MONITORED HARDWARE SENSORS (EXPERIMENTAL)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textMuted,
+                        letterSpacing = 1.2.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.accentAmber.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "Manual Mode",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.accentAmber
+                        )
+                    }
                 }
-            )
+            }
+
+            items(uiState.sensorList, key = { it.id }) { sensor ->
+                SleekSensorRow(
+                    sensor = sensor,
+                    showSwitch = true,
+                    onToggleSensor = { sensorId ->
+                        viewModel.toggleIndividualSensor(sensorId)
+                    }
+                )
+            }
+        } else {
+            // Sleek Unified Hardware Telemetry Card (Toggles removed by default)
+            item {
+                SleekSensorsStatusCard(
+                    sensorList = uiState.sensorList,
+                    isSensorsOff = uiState.isSensorsOff
+                )
+            }
         }
     }
 }
@@ -1038,9 +1069,180 @@ fun SleekStepRow(step: String, text: String) {
 }
 
 @Composable
+fun SleekSensorsStatusCard(
+    sensorList: List<SensorItem>,
+    isSensorsOff: Boolean
+) {
+    val colors = LocalAppColors.current
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("sensors_status_card"),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (colors.isDark) colors.glowColor else colors.border),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.15f) else colors.accentCyan.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSensorsOff) Icons.Default.Shield else Icons.Default.Sensors,
+                            contentDescription = "Sensors Status",
+                            tint = if (isSensorsOff) colors.accentRose else colors.accentCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "DEVICE HARDWARE SENSORS",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary,
+                            letterSpacing = 0.8.sp
+                        )
+                        Text(
+                            text = if (isSensorsOff) "Unified Hardware Privacy Active" else "All Hardware Sensors Online",
+                            fontSize = 11.sp,
+                            color = if (isSensorsOff) colors.accentRose else colors.accentGreen,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSensorsOff) colors.accentRose.copy(alpha = 0.15f) else colors.accentGreen.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isSensorsOff) "BLOCKED" else "ONLINE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = if (isSensorsOff) colors.accentRose else colors.accentGreen
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 2-column grid of sensor items showing telemetry status without toggle switches
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                sensorList.chunked(2).forEach { rowPair ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowPair.forEach { sensor ->
+                            val icon = when (sensor.id) {
+                                "camera" -> Icons.Default.PhotoCamera
+                                "mic" -> Icons.Default.Mic
+                                "motion" -> Icons.Default.DirectionsRun
+                                "gyro" -> Icons.Default.ScreenRotation
+                                "proximity" -> Icons.Default.Sensors
+                                else -> Icons.Default.WbSunny
+                            }
+                            val isBlocked = sensor.isBlocked || isSensorsOff
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.softBg)
+                                    .border(0.5.dp, colors.border, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = sensor.name,
+                                            tint = if (isBlocked) colors.accentRose else colors.accentCyan,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = sensor.name,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = colors.textPrimary,
+                                            maxLines = 1
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isBlocked) colors.accentRose else colors.accentGreen)
+                                    )
+                                }
+                            }
+                        }
+                        if (rowPair.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Info",
+                    tint = colors.textMuted,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "Android protects all motion sensors as a unified hardware kill-switch. Experimental individual switches can be enabled in System tab.",
+                    fontSize = 11.sp,
+                    color = colors.textMuted,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun SleekSensorRow(
     sensor: SensorItem,
-    onToggleSensor: (String) -> Unit
+    showSwitch: Boolean = false,
+    onToggleSensor: (String) -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val icon = when (sensor.id) {
@@ -1114,18 +1316,20 @@ fun SleekSensorRow(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                if (showSwitch) {
+                    Spacer(modifier = Modifier.width(8.dp))
 
-                Switch(
-                    checked = sensor.isBlocked,
-                    onCheckedChange = { onToggleSensor(sensor.id) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = colors.accentRose,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = colors.accentGreen
+                    Switch(
+                        checked = sensor.isBlocked,
+                        onCheckedChange = { onToggleSensor(sensor.id) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = colors.accentRose,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = colors.accentGreen
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -1724,8 +1928,12 @@ fun SensorsOffBrandLogo(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun SleekAboutTabContent(uiState: SensorUiState) {
+fun SleekAboutTabContent(
+    uiState: SensorUiState,
+    viewModel: SensorViewModel
+) {
     val colors = LocalAppColors.current
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier
@@ -1799,6 +2007,215 @@ fun SleekAboutTabContent(uiState: SensorUiState) {
                     SleekInfoRow(label = "Shizuku Integration", value = if (uiState.isShizukuAuthorized) "Authorized (Active)" else "Inactive")
                     SleekInfoRow(label = "Root Privileges", value = if (uiState.isRootAvailable) "Granted" else "None")
                     SleekInfoRow(label = "Hardware Privacy State", value = if (uiState.isSensorsOff) "Privacy Mode Active" else "Sensors Enabled")
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (colors.isDark) colors.glowColor else colors.border),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colors.accentAmber.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Science,
+                                contentDescription = "Experimental",
+                                tint = colors.accentAmber,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = "EXPERIMENTAL & SYSTEM SETTINGS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accentAmber,
+                                letterSpacing = 1.2.sp
+                            )
+                            Text(
+                                text = "Individual sensor controls & system shortcuts",
+                                fontSize = 11.sp,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Experimental per-sensor toggle option
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = "Individual Sensor Toggles",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                text = "Show per-sensor manual switches for Camera, Microphone, and motion sensors on the Matrix dashboard.",
+                                fontSize = 11.sp,
+                                color = colors.textSecondary
+                            )
+                        }
+
+                        Switch(
+                            checked = uiState.showExperimentalToggles,
+                            onCheckedChange = { viewModel.setShowExperimentalToggles(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = colors.accentAmber,
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = colors.softBg
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = colors.border)
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "NATIVE ANDROID SETTINGS SHORTCUTS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textMuted,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Settings.ACTION_PRIVACY_SETTINGS)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Privacy settings not directly accessible", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = "Privacy",
+                                modifier = Modifier.size(16.dp),
+                                tint = colors.accentCyan
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Privacy Settings", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accentCyan)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Developer options not directly accessible", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeveloperMode,
+                                contentDescription = "Developer Options",
+                                modifier = Modifier.size(16.dp),
+                                tint = colors.accentAmber
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Developer Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accentAmber)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e2: Exception) {
+                                        Toast.makeText(context, "Battery settings not directly accessible", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BatteryChargingFull,
+                                contentDescription = "Battery",
+                                modifier = Modifier.size(16.dp),
+                                tint = colors.accentGreen
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Battery Unrestricted", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accentGreen)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "App info not accessible", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "App Info",
+                                modifier = Modifier.size(16.dp),
+                                tint = colors.accentBlue
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("App Info / Autostart", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accentBlue)
+                        }
+                    }
                 }
             }
         }

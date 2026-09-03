@@ -126,8 +126,11 @@ object TileLogManager {
     private const val MAX_LOGS = 80
 
     private val idCounter = AtomicLong(System.currentTimeMillis())
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
-    private val fullDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+    private val timeFormat = ThreadLocal.withInitial { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
+    private val fullDateFormat = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()) }
+
+    private fun formatTime(timestamp: Long): String = timeFormat.get()?.format(Date(timestamp)) ?: ""
+    private fun formatFullDate(timestamp: Long): String = fullDateFormat.get()?.format(Date(timestamp)) ?: ""
 
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
     val logsFlow: StateFlow<List<LogEntry>> = _logsFlow.asStateFlow()
@@ -159,13 +162,13 @@ object TileLogManager {
                         LogEntry(
                             id = obj.optLong("id", ts),
                             timestamp = ts,
-                            formattedTime = obj.optString("formattedTime", timeFormat.format(Date(ts))),
+                            formattedTime = obj.optString("formattedTime", formatTime(ts)),
                             category = runCatching { LogCategory.valueOf(obj.getString("category")) }.getOrDefault(LogCategory.TILE),
                             level = runCatching { LogLevel.valueOf(obj.getString("level")) }.getOrDefault(LogLevel.INFO),
                             title = obj.getString("title"),
                             detail = obj.optString("detail", ""),
                             executionMs = if (obj.has("executionMs")) obj.getLong("executionMs") else null,
-                            fullDateTime = obj.optString("fullDateTime", fullDateFormat.format(Date(ts)))
+                            fullDateTime = obj.optString("fullDateTime", formatFullDate(ts))
                         )
                     )
                 }
@@ -247,8 +250,8 @@ object TileLogManager {
         executionMs: Long? = null
     ) {
         val now = System.currentTimeMillis()
-        val formatted = timeFormat.format(Date(now))
-        val fullFormatted = fullDateFormat.format(Date(now))
+        val formatted = formatTime(now)
+        val fullFormatted = formatFullDate(now)
         val entry = LogEntry(
             id = idCounter.incrementAndGet(),
             timestamp = now,
@@ -291,7 +294,7 @@ object TileLogManager {
         isListening: Boolean? = null
     ) {
         val now = System.currentTimeMillis()
-        val formattedNow = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(now))
+        val formattedNow = formatTime(now)
         _diagnosticsFlow.update { prev ->
             prev.copy(
                 lastState = lastState ?: prev.lastState,

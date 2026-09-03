@@ -10,7 +10,9 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +55,7 @@ data class SensorUiState(
     val selectedTimeMode: TimeDisplayMode = TimeDisplayMode.EXACT,
     val logs: List<String> = emptyList(),
     val tileSettings: TileSettingsState = TileSettingsState(),
+    val showExperimentalToggles: Boolean = false,
     val sensorList: List<SensorItem> = listOf(
         SensorItem("camera", "Camera", "Hardware Sensor", false, "ic_camera"),
         SensorItem("mic", "Microphone", "Audio Input", false, "ic_mic"),
@@ -89,14 +92,21 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         refreshState()
     }
 
+    private var observerJob: Job? = null
+    private var activeRefreshJob: Job? = null
+
     private val contentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             super.onChange(selfChange)
             val context = getApplication<Application>().applicationContext
-            val isOff = ShizukuManager.getSensorsOffState(context)
-            addLog("Detected system sensor privacy change -> SensorsOff = $isOff", category = LogCategory.SYSTEM)
-            TileLogManager.logSystemEvent(context, "System Privacy State Change", "ContentObserver triggered | sensors_off = $isOff")
-            refreshState()
+            observerJob?.cancel()
+            observerJob = viewModelScope.launch(Dispatchers.IO) {
+                delay(60) // Debounce multiple rapid settings broadcasts
+                val isOff = ShizukuManager.getSensorsOffState(context)
+                addLog("Detected system sensor privacy change -> SensorsOff = $isOff", category = LogCategory.SYSTEM)
+                TileLogManager.logSystemEvent(context, "System Privacy State Change", "ContentObserver triggered | sensors_off = $isOff")
+                refreshState()
+            }
         }
     }
 
@@ -145,7 +155,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
             // Periodic background sync loop (every 2.5s) to guarantee real-time tile & UI freshness
             viewModelScope.launch(Dispatchers.IO) {
-                while (true) {
+                while (isActive) {
                     delay(2500)
                     val liveOff = ShizukuManager.getSensorsOffState(context)
                     if (liveOff != _uiState.value.isSensorsOff) {
@@ -158,6 +168,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     override fun onCleared() {
         super.onCleared()
+        observerJob?.cancel()
+        activeRefreshJob?.cancel()
         try {
             Shizuku.removeBinderReceivedListener(binderReceivedListener)
             Shizuku.removeBinderDeadListener(binderDeadListener)
@@ -181,7 +193,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun refreshState() {
-        viewModelScope.launch(Dispatchers.IO) {
+        activeRefreshJob?.cancel()
+        activeRefreshJob = viewModelScope.launch(Dispatchers.IO) {
             val context = getApplication<Application>().applicationContext
             val isInstalled = ShizukuManager.isShizukuInstalled(context)
             val isRunning = ShizukuManager.isShizukuRunning()
@@ -197,12 +210,13 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             val disabledSubtitle = ShizukuManager.getTileDisabledSubtitleText(context)
             val tileBlockMode = ShizukuManager.getTileBlockMode(context)
             val customIconPath = ShizukuManager.getCustomIconPath(context)
+            val showExp = ShizukuManager.getShowExperimentalToggles(context)
 
             val themeMode = ShizukuManager.getAppThemeMode(context)
             val launcherAlias = ShizukuManager.getAppLauncherAlias(context)
 
             val updatedSensors = _uiState.value.sensorList.map { sensor ->
-                val sensorBlocked = ShizukuManager.getIndividualSensorState(context, sensor.id)
+                val sensorBlocked = ShizukuManager.getIndividualSensorState(context, sensor.id, knownGlobalState = isOff)
                 sensor.copy(isBlocked = sensorBlocked)
             }
 
@@ -227,6 +241,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                     isSensorsOff = isOff,
                     appThemeMode = themeMode,
                     appLauncherAlias = launcherAlias,
+                    showExperimentalToggles = showExp,
                     tileSettings = TileSettingsState(
                         iconStyle = tileIconStyle,
                         customLabel = tileLabelText,
@@ -344,6 +359,15 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 addLog("Error: Failed to process custom tile icon image.")
             }
             refreshState()
+        }
+    }
+
+    fun setShowExperimentalToggles(enabled: Boolean) {
+        viewModelScope.launch {
+            val context = getApplication<Application>().applicationContext
+            ShizukuManager.setShowExperimentalToggles(context, enabled)
+            _uiState.update { it.copy(showExperimentalToggles = enabled) }
+            addLog("Experimental sensor toggles: ${if (enabled) "ENABLED" else "DISABLED"}")
         }
     }
 
