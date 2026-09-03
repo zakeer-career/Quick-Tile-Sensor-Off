@@ -399,6 +399,84 @@ object ShizukuManager {
         }
     }
 
+    /**
+     * Injects the Quick Settings tile directly into the active QS shade via Shizuku/Root
+     * and prompts SystemUI via official StatusBarManager API (Android 13+).
+     */
+    fun addTileToQuickSettings(context: Context, addNativeAospTile: Boolean = false): Pair<Boolean, String> {
+        val packageName = context.packageName
+        val appTileComponent = "custom($packageName/$packageName.SensorsOffTileService)"
+        val aospTileComponent = "custom(com.android.settings/com.android.settings.development.qs.SensorPrivacyTileService)"
+        val aospPlain = "sensor_privacy"
+
+        val targetTile = if (addNativeAospTile) aospTileComponent else appTileComponent
+
+        // Method 1: Android 13+ (API 33+) native request prompt (Zero risk, official API)
+        if (!addNativeAospTile && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val sbm = context.getSystemService(android.app.StatusBarManager::class.java)
+                if (sbm != null) {
+                    val component = android.content.ComponentName(context, SensorsOffTileService::class.java)
+                    val icon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_sensors_off)
+                    sbm.requestAddTileService(
+                        component,
+                        context.getString(R.string.tile_label),
+                        icon,
+                        context.mainExecutor
+                    ) { _ -> }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "StatusBarManager.requestAddTileService fallback", t)
+            }
+        }
+
+        // Method 2: Via Shizuku or Root direct injection into sysui_qs_tiles
+        val isShizuku = isShizukuRunning() && isShizukuAuthorized()
+        val isRoot = isRootAvailable()
+
+        if (!isShizuku && !isRoot) {
+            return Pair(false, "Shizuku authorization or Root required to inject Quick Settings tile directly.")
+        }
+
+        val runCommand = { cmd: String ->
+            if (isShizuku) runShizukuCommand(cmd) else runRootCommand(cmd)
+        }
+
+        return try {
+            val currentTilesOutput = runCommand("settings get secure sysui_qs_tiles").trim()
+            if (currentTilesOutput.isBlank() || currentTilesOutput == "null") {
+                return Pair(false, "Could not read sysui_qs_tiles.")
+            }
+
+            if (currentTilesOutput.contains(targetTile) || (addNativeAospTile && currentTilesOutput.contains(aospPlain))) {
+                // Ensure SystemUI re-reads it
+                runCommand("killall com.android.systemui")
+                return Pair(true, "Tile is already in your Quick Settings list! Refreshed SystemUI.")
+            }
+
+            val newTiles = if (addNativeAospTile) {
+                "$currentTilesOutput,$aospTileComponent,$aospPlain"
+            } else {
+                "$currentTilesOutput,$appTileComponent"
+            }
+
+            runCommand("settings put secure sysui_qs_tiles \"$newTiles\"")
+            // Refresh SystemUI
+            runCommand("killall com.android.systemui")
+
+            TileLogManager.logTileEvent(
+                context,
+                "Tile Injected",
+                "Successfully injected $targetTile into sysui_qs_tiles",
+                LogLevel.SUCCESS
+            )
+            Pair(true, "Successfully added to Quick Settings!")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to inject Quick Settings tile", e)
+            Pair(false, "Failed to inject tile: ${e.message}")
+        }
+    }
+
     // App Theme Preferences Storage
     fun getAppThemeMode(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)

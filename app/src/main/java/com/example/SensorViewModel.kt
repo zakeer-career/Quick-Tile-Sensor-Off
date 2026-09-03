@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -366,6 +367,18 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 else -> "Ultra Private / Sensors Off"
             }
             addLog("App icon rebranding set to: $friendlyName")
+        }
+    }
+
+    fun injectTileToQuickSettings(nativeAosp: Boolean, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>().applicationContext
+            val result = ShizukuManager.addTileToQuickSettings(context, addNativeAospTile = nativeAosp)
+            withContext(Dispatchers.Main) {
+                addLog("Quick Settings Injection: ${result.second}")
+                onResult(result.first, result.second)
+            }
+            refreshState()
         }
     }
 

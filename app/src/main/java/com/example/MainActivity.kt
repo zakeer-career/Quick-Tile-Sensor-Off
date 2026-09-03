@@ -228,7 +228,12 @@ fun SleekHomeTabContent(
 
         // Quick Settings Tile Setup Guide
         item {
-            SleekQuickTileTipCard(uiState = uiState)
+            SleekQuickTileTipCard(
+                uiState = uiState,
+                onInjectTile = { isNative, onResult ->
+                    viewModel.injectTileToQuickSettings(isNative, onResult)
+                }
+            )
         }
 
         // Monitored Sensors List Header
@@ -796,11 +801,15 @@ fun SleekTileCustomizationCard(
 }
 
 @Composable
-fun SleekQuickTileTipCard(uiState: SensorUiState) {
+fun SleekQuickTileTipCard(
+    uiState: SensorUiState,
+    onInjectTile: (Boolean, (Boolean, String) -> Unit) -> Unit
+) {
     val colors = LocalAppColors.current
     var isExpanded by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+    var isInjecting by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -837,13 +846,13 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Quick Settings Tile & ADB Guide",
+                        text = "Quick Settings Tile & Quick Inject",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.textPrimary
                     )
                     Text(
-                        text = "Adding QS tile and granting secure settings permission",
+                        text = "1-Click tile injection via Shizuku or manual drag setup",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -861,6 +870,93 @@ fun SleekQuickTileTipCard(uiState: SensorUiState) {
                     modifier = Modifier.padding(top = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // 1-Click Tile Injections
+                    Text(
+                        text = "1-CLICK TILE INJECTION (SHIZUKU / SYSTEM):",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.accentCyan,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                isInjecting = true
+                                onInjectTile(false) { success, message ->
+                                    isInjecting = false
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            enabled = !isInjecting
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sensors,
+                                contentDescription = "App Tile",
+                                modifier = Modifier.size(16.dp),
+                                tint = CyberVoid
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Add App Tile",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CyberVoid
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                isInjecting = true
+                                onInjectTile(true) { success, message ->
+                                    isInjecting = false
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentGreen),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                            enabled = !isInjecting
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = "Native AOSP",
+                                modifier = Modifier.size(16.dp),
+                                tint = colors.accentGreen
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Add AOSP Tile",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accentGreen
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "• 'Add App Tile' configures our customizable tile.\n• 'Add AOSP Tile' injects the built-in system tile directly without leaving Developer Options ON (banking app safe).",
+                        fontSize = 11.sp,
+                        color = colors.textSecondary,
+                        lineHeight = 15.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    HorizontalDivider(color = colors.border)
+
+                    Text(
+                        text = "Manual Drag Setup:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+
                     SleekStepRow(step = "1", text = "Swipe down twice from top status bar to open Quick Settings.")
                     SleekStepRow(step = "2", text = "Tap the Edit (Pencil) button at the bottom.")
                     SleekStepRow(step = "3", text = "Find 'Sensors Off' in Available Tiles and drag to your active tiles.")
