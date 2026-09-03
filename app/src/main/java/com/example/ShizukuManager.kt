@@ -118,49 +118,15 @@ object ShizukuManager {
 
         var executedSuccessfully = false
 
-        // Batch all sensor privacy shell commands and service calls into one single execution script
-        val commands = mutableListOf(
-            "settings put global sensors_off $targetValue",
-            "settings put secure sensor_privacy $targetValue",
-            "cmd sensor_privacy ${if (turnOff) "enable" else "disable"}"
-        )
+        // Fast, lean command set: Toggles sensor privacy + global flag in one single lightweight invocation
+        val fastCommand = "cmd sensor_privacy ${if (turnOff) "enable" else "disable"} ; cmd sensor_privacy set-sensor-state 0 1 $turnOff 2>/dev/null ; cmd sensor_privacy set-sensor-state 0 2 $turnOff 2>/dev/null ; settings put global sensors_off $targetValue ; settings put secure sensor_privacy $targetValue"
 
-        if (turnOff) {
-            commands.add("cmd sensor_privacy set-sensor-state 0 mic true 2>/dev/null")
-            commands.add("cmd sensor_privacy set-sensor-state 0 camera true 2>/dev/null")
-            commands.add("cmd sensor_privacy set-sensor-state 0 1 true 2>/dev/null")
-            commands.add("cmd sensor_privacy set-sensor-state 0 2 true 2>/dev/null")
-            commands.add("service call sensor_privacy 1 i32 1")
-            commands.add("service call sensor_privacy 2 i32 1")
-            commands.add("service call sensor_privacy 6 i32 1")
-            commands.add("service call sensor_privacy 7 i32 1")
-            commands.add("service call sensor_privacy 8 i32 1")
-            commands.add("service call sensor_privacy 9 i32 1")
-            commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 1")
-            commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 1")
-        } else {
-            commands.add("cmd sensor_privacy set-sensor-state 0 mic false 2>/dev/null")
-            commands.add("cmd sensor_privacy set-sensor-state 0 camera false 2>/dev/null")
-            commands.add("cmd sensor_privacy set-sensor-state 0 1 false 2>/dev/null")
-            commands.add("cmd sensor_privacy set-sensor-state 0 2 false 2>/dev/null")
-            commands.add("service call sensor_privacy 1 i32 0")
-            commands.add("service call sensor_privacy 2 i32 0")
-            commands.add("service call sensor_privacy 6 i32 0")
-            commands.add("service call sensor_privacy 7 i32 0")
-            commands.add("service call sensor_privacy 8 i32 0")
-            commands.add("service call sensor_privacy 9 i32 0")
-            commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 0")
-            commands.add("service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 0")
-        }
-
-        val compoundCommand = commands.joinToString(" ; ")
-
-        // Method 1: Shizuku (Single invocation for maximum speed)
+        // Method 1: Shizuku (Single fast invocation for maximum speed)
         if (isShizukuRunning() && isShizukuAuthorized()) {
             try {
-                runShizukuCommand(compoundCommand)
+                runShizukuCommand(fastCommand)
                 executedSuccessfully = true
-                Log.d(TAG, "Executed SensorPrivacy commands via Shizuku successfully")
+                Log.d(TAG, "Executed fast SensorPrivacy commands via Shizuku successfully")
             } catch (e: Throwable) {
                 Log.e(TAG, "Shizuku execution failed", e)
             }
@@ -169,9 +135,9 @@ object ShizukuManager {
         // Method 2: Direct Root SU (Single invocation)
         if (!executedSuccessfully && isRootAvailable()) {
             try {
-                runRootCommand(compoundCommand)
+                runRootCommand(fastCommand)
                 executedSuccessfully = true
-                Log.d(TAG, "Executed SensorPrivacy commands via Root SU successfully")
+                Log.d(TAG, "Executed fast SensorPrivacy commands via Root SU successfully")
             } catch (e: Throwable) {
                 Log.e(TAG, "Root SU execution failed", e)
             }
@@ -563,71 +529,35 @@ object ShizukuManager {
             Log.d(TAG, "SensorPrivacyManager reflection check: ${e.message}")
         }
 
-        // Layer 2: Check System / Global / Secure settings across all OEM key variations
+        // Layer 2: Instant in-memory check of Global / Secure settings (0ms latency)
         try {
             val cr = context.contentResolver
-            val keys = listOf(
-                "sensors_off",
-                "sensor_privacy",
-                "all_sensors_off",
-                "sensor_privacy_camera",
-                "sensor_privacy_microphone"
-            )
-            for (key in keys) {
-                try {
-                    val gVal = Settings.Global.getInt(cr, key, -1)
-                    if (gVal == 1) return true
-                } catch (t: Throwable) {}
-                try {
-                    val sVal = Settings.Secure.getInt(cr, key, -1)
-                    if (sVal == 1) return true
-                } catch (t: Throwable) {}
-                try {
-                    val sysVal = Settings.System.getInt(cr, key, -1)
-                    if (sysVal == 1) return true
-                } catch (t: Throwable) {}
+            val gVal = Settings.Global.getInt(cr, "sensors_off", -1)
+            if (gVal == 1) return true
+            if (gVal == 0) return false
+
+            val sVal = Settings.Secure.getInt(cr, "sensor_privacy", -1)
+            if (sVal == 1) return true
+            if (sVal == 0) return false
+
+            // Additional OEM keys check
+            val extraKeys = listOf("all_sensors_off", "sensor_privacy_camera", "sensor_privacy_microphone")
+            for (key in extraKeys) {
+                val valG = Settings.Global.getInt(cr, key, -1)
+                if (valG == 1) return true
+                val valS = Settings.Secure.getInt(cr, key, -1)
+                if (valS == 1) return true
             }
         } catch (e: Throwable) {
             Log.d(TAG, "Settings table check error: ${e.message}")
         }
 
-        // Layer 3: Check live status via Shizuku IPC if available
+        // Layer 3: Ultra-fast single command check via Shizuku if settings table was unavailable
         if (isShizukuRunning() && isShizukuAuthorized()) {
             try {
-                // Command 1: cmd sensor_privacy is-sensor-privacy-enabled 0
-                val cmdUserOut = runShizukuCommand("cmd sensor_privacy is-sensor-privacy-enabled 0").trim()
-                if (cmdUserOut.contains("true", ignoreCase = true)) return true
-                if (cmdUserOut.contains("false", ignoreCase = true)) return false
-
-                // Command 2: cmd sensor_privacy is-sensor-privacy-enabled
                 val cmdOut = runShizukuCommand("cmd sensor_privacy is-sensor-privacy-enabled").trim()
                 if (cmdOut.contains("true", ignoreCase = true)) return true
                 if (cmdOut.contains("false", ignoreCase = true)) return false
-
-                // Command 3: dumpsys sensor_privacy
-                val dumpOut = runShizukuCommand("dumpsys sensor_privacy").trim()
-                if (dumpOut.isNotBlank()) {
-                    if (dumpOut.contains("Global sensor privacy: true", ignoreCase = true) ||
-                        dumpOut.contains("isAllSensorPrivacyEnabled: true", ignoreCase = true) ||
-                        dumpOut.contains("Sensor privacy is enabled: true", ignoreCase = true) ||
-                        dumpOut.contains("isEnabled: true", ignoreCase = true) ||
-                        dumpOut.contains("mIsSensorPrivacyEnabled: true", ignoreCase = true) ||
-                        dumpOut.contains("State: ENABLED", ignoreCase = true)
-                    ) {
-                        return true
-                    }
-                }
-
-                // Command 4: service call sensor_privacy 1 or 8
-                val serviceOut = runShizukuCommand("service call sensor_privacy 1 ; service call sensor_privacy 8 i32 0").trim()
-                if (serviceOut.contains("00000001")) {
-                    return true
-                }
-
-                // Command 5: settings get global sensors_off
-                val globOut = runShizukuCommand("settings get global sensors_off").trim()
-                if (globOut == "1") return true
-                if (globOut == "0") return false
             } catch (e: Throwable) {
                 Log.w(TAG, "Could not query sensor_privacy via Shizuku", e)
             }
@@ -636,10 +566,9 @@ object ShizukuManager {
         // Layer 4: Check live status via Root SU if available
         if (isRootAvailable()) {
             try {
-                val rootCmd = runRootCommand("cmd sensor_privacy is-sensor-privacy-enabled 0 || cmd sensor_privacy is-sensor-privacy-enabled || dumpsys sensor_privacy | grep -i 'true'").trim()
-                if (rootCmd.contains("true", ignoreCase = true) || rootCmd.contains("ENABLED", ignoreCase = true)) {
-                    return true
-                }
+                val rootCmd = runRootCommand("cmd sensor_privacy is-sensor-privacy-enabled").trim()
+                if (rootCmd.contains("true", ignoreCase = true)) return true
+                if (rootCmd.contains("false", ignoreCase = true)) return false
             } catch (e: Throwable) {
                 Log.w(TAG, "Could not query sensor_privacy via Root SU", e)
             }

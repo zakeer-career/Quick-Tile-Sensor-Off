@@ -21,6 +21,10 @@ class SensorsOffTileService : TileService() {
 
     companion object {
         private const val TAG = "SensorsOffTileService"
+        @Volatile
+        private var pendingTargetState: Boolean? = null
+        @Volatile
+        private var pendingTargetExpiryTimeMs: Long = 0L
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -63,6 +67,13 @@ class SensorsOffTileService : TileService() {
         super.onStartListening()
         val startTime = System.currentTimeMillis()
         Log.d(TAG, "Tile entered onStartListening")
+
+        // If user tapped recently within lock window, preserve optimistic state with 0ms sync
+        val now = System.currentTimeMillis()
+        if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
+            refreshTileImmediately()
+            return
+        }
 
         // 1. Immediate synchronous update from fast local state so SystemUI never displays STATE_UNAVAILABLE
         refreshTileImmediately()
@@ -135,12 +146,17 @@ class SensorsOffTileService : TileService() {
 
     private fun refreshTileImmediately() {
         try {
-            val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
-            val isSensorsOff = if (blockMode == "cam_mic") {
-                ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                        ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+            val now = System.currentTimeMillis()
+            val isSensorsOff = if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
+                pendingTargetState!!
             } else {
-                ShizukuManager.getSensorsOffState(applicationContext)
+                val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
+                if (blockMode == "cam_mic") {
+                    ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                            ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                } else {
+                    ShizukuManager.getSensorsOffState(applicationContext)
+                }
             }
             updateTileState(isSensorsOff)
         } catch (e: Throwable) {
@@ -170,7 +186,11 @@ class SensorsOffTileService : TileService() {
             LogLevel.INFO
         )
 
-        // Instant optimistic tile update so user feels immediate response
+        // Lock optimistic target state so rapid SystemUI onStartListening cycles don't revert UI
+        pendingTargetState = target
+        pendingTargetExpiryTimeMs = System.currentTimeMillis() + 1500L
+
+        // Instant optimistic tile update so user feels immediate response (0ms)
         updateTileState(target)
 
         serviceScope.launch {
@@ -194,6 +214,9 @@ class SensorsOffTileService : TileService() {
             }
 
             val elapsedMs = System.currentTimeMillis() - executionStartTime
+
+            // Clear optimistic lock once command has dispatched
+            pendingTargetState = null
 
             // Verify live hardware state
             val confirmedState = if (blockMode == "cam_mic") {
