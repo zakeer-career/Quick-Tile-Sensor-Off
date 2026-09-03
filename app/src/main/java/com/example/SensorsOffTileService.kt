@@ -204,7 +204,7 @@ class SensorsOffTileService : TileService() {
                 backendUsed = if (camSuccess && micSuccess) "Selective Camera/Mic HAL" else "Selective Matrix (Partial/Fail)"
             } else {
                 Log.d(TAG, "Toggling Global SensorsOff to $target")
-                val success = ShizukuManager.setSensorsOffState(applicationContext, target)
+                val success = ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
                 backendUsed = when {
                     ShizukuManager.isShizukuAuthorized() -> "Shizuku AIDL Proxy"
                     ShizukuManager.isRootAvailable() -> "Root SuperUser (su)"
