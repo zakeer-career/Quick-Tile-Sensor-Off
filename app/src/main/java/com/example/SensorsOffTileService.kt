@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -215,16 +216,27 @@ class SensorsOffTileService : TileService() {
 
             val elapsedMs = System.currentTimeMillis() - executionStartTime
 
-            // Clear optimistic lock once command has dispatched
-            pendingTargetState = null
-
             // Verify live hardware state
-            val confirmedState = if (blockMode == "cam_mic") {
+            var confirmedState = if (blockMode == "cam_mic") {
                 ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
                         ShizukuManager.getIndividualSensorState(applicationContext, "mic")
             } else {
                 ShizukuManager.getSensorsOffState(applicationContext)
             }
+
+            // If settings provider hasn't committed in-memory cache yet, allow a brief 40ms settle
+            if (confirmedState != target) {
+                delay(40)
+                confirmedState = if (blockMode == "cam_mic") {
+                    ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                            ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                } else {
+                    ShizukuManager.getSensorsOffState(applicationContext)
+                }
+            }
+
+            // Clear optimistic lock once state has settled
+            pendingTargetState = null
 
             val isConfirmed = confirmedState == target
             val level = if (isConfirmed) LogLevel.SUCCESS else LogLevel.WARN
