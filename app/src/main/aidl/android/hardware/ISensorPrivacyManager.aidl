@@ -9,8 +9,8 @@ interface ISensorPrivacyManager {
     void removeSensorPrivacyListener(in ISensorPrivacyListener listener);
     void removeToggleSensorPrivacyListener(in ISensorPrivacyListener listener);
     boolean isSensorPrivacyEnabled();
-    boolean isCombinedToggleSensorPrivacyEnabled(int sensor);
     boolean isToggleSensorPrivacyEnabled(int toggleType, int sensor);
+    boolean isCombinedToggleSensorPrivacyEnabled(int sensor);
     void setSensorPrivacy(boolean enable);
     void setToggleSensorPrivacy(int userId, int source, int sensor, boolean enable);
     void setToggleSensorPrivacyForProfileGroup(int userId, int source, int sensor, boolean enable);

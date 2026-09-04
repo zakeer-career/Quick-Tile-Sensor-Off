@@ -48,7 +48,6 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -56,21 +55,25 @@ jobs:
           cache-read-only: false
           gradle-home-cache-cleanup: true
 
-      - name: Generate Debug Keystore
+      - name: Restore Debug Keystore
         run: |
-          if [ ! -f debug.keystore ]; then
-            keytool -genkey -noprompt -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            keytool -genkey -noprompt -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 1024 -validity 10000 -dname "CN=Debug"
           fi
 
       - name: Build Debug APK
-        run: gradle assembleDebug --parallel --build-cache --configuration-cache -x lint -x test
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g' -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
+        run: gradle :app:assembleDebug --parallel --build-cache -x lint -x test -x check
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SensorsOff-APK
           path: app/build/outputs/apk/debug/*.apk
-          compression-level: 1
+          compression-level: 0
 
       - name: Generate Release Notes from CHANGELOG
         run: |

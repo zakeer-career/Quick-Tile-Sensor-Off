@@ -38,7 +38,7 @@ class SensorsOffTileService : TileService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var listeningJob: kotlinx.coroutines.Job? = null
-    private var clickJob: kotlinx.coroutines.Job? = null
+    private val toggleChannel = kotlinx.coroutines.channels.Channel<Pair<Boolean, Long>>(kotlinx.coroutines.channels.Channel.CONFLATED)
 
     // Pre-cached visual assets - zero memory allocations during touch events
     @Volatile private var cachedActiveIcon: Icon? = null
@@ -88,6 +88,48 @@ class SensorsOffTileService : TileService() {
             "SensorsOffTileService initialized with zero-allocation cache and ContentObserver",
             LogLevel.DEBUG
         )
+
+        // Launch single serialized toggle consumer to eliminate concurrent shell process pileups
+        serviceScope.launch(Dispatchers.IO) {
+            for ((target, clickTime) in toggleChannel) {
+                val executionStartTime = System.currentTimeMillis()
+
+                val success = if (cachedBlockMode == "cam_mic") {
+                    val camSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "camera", target)
+                    val micSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "mic", target)
+                    camSuccess && micSuccess
+                } else {
+                    ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
+                }
+
+                val elapsedMs = System.currentTimeMillis() - executionStartTime
+
+                TileLogManager.logTileEvent(
+                    applicationContext,
+                    "Tile Toggle Completed",
+                    "Target: $target | Success: $success | IPC Latency: ${elapsedMs}ms | Total: ${System.currentTimeMillis() - clickTime}ms",
+                    if (success) LogLevel.SUCCESS else LogLevel.WARN,
+                    executionMs = elapsedMs
+                )
+
+                TileLogManager.updateTileDiagnostics(
+                    applicationContext,
+                    lastState = if (target) "STATE_ACTIVE" else "STATE_INACTIVE",
+                    lastAction = "Toggle to ${if (target) "ON" else "OFF"}",
+                    lastLatencyMs = elapsedMs,
+                    blockMode = cachedBlockMode
+                )
+
+                withContext(Dispatchers.Main) {
+                    pendingTargetState = null
+                    if (!success) {
+                        val confirmed = ShizukuManager.getSensorsOffState(applicationContext)
+                        updateTileState(confirmed)
+                    }
+                    SensorsOffBackgroundService.update(applicationContext)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -102,7 +144,7 @@ class SensorsOffTileService : TileService() {
             LogLevel.DEBUG
         )
         listeningJob?.cancel()
-        clickJob?.cancel()
+        toggleChannel.close()
         serviceScope.cancel()
     }
 
@@ -234,46 +276,8 @@ class SensorsOffTileService : TileService() {
             LogLevel.INFO
         )
 
-        // 5. Asynchronous hardware toggle on Dispatchers.IO via direct AIDL binder (< 1ms)
-        clickJob?.cancel()
-        clickJob = serviceScope.launch(Dispatchers.IO) {
-            val executionStartTime = System.currentTimeMillis()
-
-            val success = if (cachedBlockMode == "cam_mic") {
-                val camSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "camera", target)
-                val micSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "mic", target)
-                camSuccess && micSuccess
-            } else {
-                ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
-            }
-
-            val elapsedMs = System.currentTimeMillis() - executionStartTime
-
-            TileLogManager.logTileEvent(
-                applicationContext,
-                "Tile Toggle Completed",
-                "Target: $target | Success: $success | IPC Latency: ${elapsedMs}ms | Total: ${System.currentTimeMillis() - clickTime}ms",
-                if (success) LogLevel.SUCCESS else LogLevel.WARN,
-                executionMs = elapsedMs
-            )
-
-            TileLogManager.updateTileDiagnostics(
-                applicationContext,
-                lastState = if (target) "STATE_ACTIVE" else "STATE_INACTIVE",
-                lastAction = "Toggle to ${if (target) "ON" else "OFF"}",
-                lastLatencyMs = elapsedMs,
-                blockMode = cachedBlockMode
-            )
-
-            withContext(Dispatchers.Main) {
-                pendingTargetState = null
-                if (!success) {
-                    val confirmed = ShizukuManager.getSensorsOffState(applicationContext)
-                    updateTileState(confirmed)
-                }
-                SensorsOffBackgroundService.update(applicationContext)
-            }
-        }
+        // 5. Asynchronous hardware toggle via conflated worker loop
+        toggleChannel.trySend(Pair(target, clickTime))
     }
 
     private fun updateTileState(isSensorsOff: Boolean) {
