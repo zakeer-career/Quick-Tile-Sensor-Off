@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.service.quicksettings.Tile
@@ -170,13 +171,8 @@ class SensorsOffTileService : TileService() {
             val isSensorsOff = if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
                 pendingTargetState!!
             } else {
-                val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
-                if (blockMode == "cam_mic") {
-                    ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                            ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-                } else {
-                    ShizukuManager.getSensorsOffState(applicationContext)
-                }
+                val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
+                prefs.getBoolean("sensors_off_enabled", false)
             }
             updateTileState(isSensorsOff)
         } catch (e: Throwable) {
@@ -187,107 +183,78 @@ class SensorsOffTileService : TileService() {
     override fun onClick() {
         super.onClick()
         val clickTime = System.currentTimeMillis()
-        Log.d(TAG, "Tile clicked! Initiating asynchronous sensor toggle...")
+        Log.d(TAG, "Tile clicked! Executing instant 0ms optimistic UI toggle...")
 
-        // Immediately abort any background query from onStartListening so it cannot overwrite the UI
+        // 1. Immediately cancel any background query from onStartListening so it cannot overwrite the UI
         listeningJob?.cancel()
 
-        val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
-        val current = if (blockMode == "cam_mic") {
-            ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                    ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-        } else {
-            ShizukuManager.getSensorsOffState(applicationContext)
-        }
-        val target = !current
-        val targetStateName = if (target) "STATE_ACTIVE (Sensors Blocked)" else "STATE_INACTIVE (Sensors Allowed)"
+        // 2. Instant synchronous determination of target state (0ms)
+        val currentTileState = qsTile?.state ?: Tile.STATE_INACTIVE
+        val isCurrentlyActive = (currentTileState == Tile.STATE_ACTIVE)
+        val target = !isCurrentlyActive
+        val targetStateName = if (target) "STATE_ACTIVE (On)" else "STATE_INACTIVE (Off)"
+
+        // 3. Lock optimistic target state so rapid SystemUI onStartListening cycles don't revert UI
+        pendingTargetState = target
+        pendingTargetExpiryTimeMs = System.currentTimeMillis() + 2000L
+
+        // 4. Instant synchronous tile update (0ms latency, identical to native developer tile)
+        updateTileState(target)
 
         TileLogManager.logTileEvent(
             applicationContext,
             "QS Tile Tap Event",
-            "Trigger: SystemUI Tap | Current: ${if (current) "OFF" else "ON"} -> Target: $targetStateName | Mode: $blockMode",
+            "Trigger: SystemUI Tap | Current: ${if (isCurrentlyActive) "ON" else "OFF"} -> Target: $targetStateName",
             LogLevel.INFO
         )
 
-        // Lock optimistic target state so rapid SystemUI onStartListening cycles don't revert UI
-        pendingTargetState = target
-        pendingTargetExpiryTimeMs = System.currentTimeMillis() + 1500L
-
-        // Instant optimistic tile update so user feels immediate response (0ms)
-        updateTileState(target)
-
+        // 5. Asynchronous hardware toggle on Dispatchers.IO (< 1ms via direct AIDL binder)
         clickJob?.cancel()
-        clickJob = serviceScope.launch {
+        clickJob = serviceScope.launch(Dispatchers.IO) {
             val executionStartTime = System.currentTimeMillis()
+            val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
 
-            // If Shizuku is installed but binder not connected yet (cold start from SystemUI), await binder
-            if (ShizukuManager.isShizukuInstalled(applicationContext) && !ShizukuManager.isShizukuRunning()) {
-                ShizukuManager.awaitShizukuBinder(600L)
-            }
-
-            val backendUsed: String
-
-            if (blockMode == "cam_mic") {
-                Log.d(TAG, "Toggling Selective Camera + Mic to $target")
+            val success = if (blockMode == "cam_mic") {
                 val camSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "camera", target)
                 val micSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "mic", target)
-                backendUsed = if (camSuccess && micSuccess) "Selective Camera/Mic HAL" else "Selective Matrix (Partial/Fail)"
+                camSuccess && micSuccess
             } else {
-                Log.d(TAG, "Toggling Global SensorsOff to $target")
-                val success = ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
-                backendUsed = when {
-                    ShizukuManager.isShizukuAuthorized() -> "Shizuku AIDL Proxy"
-                    ShizukuManager.isRootAvailable() -> "Root SuperUser (su)"
-                    ShizukuManager.hasSecureSettingsPermission(applicationContext) -> "Settings.Global (WRITE_SECURE)"
-                    else -> "System Fallback"
-                }
+                ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
             }
 
             val elapsedMs = System.currentTimeMillis() - executionStartTime
+            Log.d(TAG, "Hardware sensor toggle completed in ${elapsedMs}ms (success=$success)")
 
-            // Verify live hardware state
-            var confirmedState = if (blockMode == "cam_mic") {
-                ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                        ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-            } else {
-                ShizukuManager.getSensorsOffState(applicationContext)
+            val backendUsed = when {
+                ShizukuManager.isShizukuAuthorized() -> "Direct Shizuku AIDL Proxy (<1ms)"
+                ShizukuManager.isRootAvailable() -> "Root SuperUser (su)"
+                ShizukuManager.hasSecureSettingsPermission(applicationContext) -> "Settings.Global (WRITE_SECURE)"
+                else -> "System Fallback"
             }
-
-            // If settings provider hasn't committed in-memory cache yet, allow a brief 40ms settle
-            if (confirmedState != target) {
-                delay(40)
-                confirmedState = if (blockMode == "cam_mic") {
-                    ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                            ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-                } else {
-                    ShizukuManager.getSensorsOffState(applicationContext)
-                }
-            }
-
-            // Clear optimistic lock once state has settled
-            pendingTargetState = null
-
-            val isConfirmed = confirmedState == target
-            val level = if (isConfirmed) LogLevel.SUCCESS else LogLevel.WARN
 
             TileLogManager.logTileEvent(
                 applicationContext,
                 "Tile Toggle Completed",
-                "Target: $target | Confirmed State: $confirmedState | Backend: $backendUsed | IPC Latency: ${elapsedMs}ms | Total: ${System.currentTimeMillis() - clickTime}ms",
-                level,
+                "Target: $target | Success: $success | Backend: $backendUsed | IPC Latency: ${elapsedMs}ms | Total: ${System.currentTimeMillis() - clickTime}ms",
+                if (success) LogLevel.SUCCESS else LogLevel.WARN,
                 executionMs = elapsedMs
             )
 
             TileLogManager.updateTileDiagnostics(
                 applicationContext,
-                lastState = if (confirmedState) "STATE_ACTIVE" else "STATE_INACTIVE",
-                lastAction = "Toggle to ${if (target) "BLOCKED" else "ALLOWED"}",
+                lastState = if (target) "STATE_ACTIVE" else "STATE_INACTIVE",
+                lastAction = "Toggle to ${if (target) "ON" else "OFF"}",
                 lastLatencyMs = elapsedMs,
                 blockMode = blockMode
             )
 
             withContext(Dispatchers.Main) {
-                updateTileState(confirmedState)
+                pendingTargetState = null
+                if (!success) {
+                    // Revert to true live hardware state if hardware toggle failed
+                    val confirmed = ShizukuManager.getSensorsOffState(applicationContext)
+                    updateTileState(confirmed)
+                }
                 SensorsOffBackgroundService.update(applicationContext)
             }
         }

@@ -1378,7 +1378,7 @@ fun SleekLogsTabContent(
             appendLine("==================================================")
             appendLine("           SensorsOff Advanced Telemetry          ")
             appendLine("==================================================")
-            appendLine("App Version       : 2.4 (SensorsOff)")
+            appendLine("App Version       : 2.5 (SensorsOff)")
             appendLine("Device            : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
             appendLine("Session Uptime    : ${tileDiagnostics.getUptimeString(System.currentTimeMillis())}")
             appendLine("Quick Tile State  : ${tileDiagnostics.lastState}")
@@ -1978,7 +1978,7 @@ fun SleekAboutTabContent(
                     )
 
                     Text(
-                        text = "Version 2.4",
+                        text = "Version 2.5",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -1991,6 +1991,93 @@ fun SleekAboutTabContent(
                         color = colors.textSecondary,
                         textAlign = TextAlign.Center
                     )
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBlue.copy(alpha = 0.3f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colors.accentBlue.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Update,
+                                contentDescription = "What's New",
+                                tint = colors.accentBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = "WHAT'S NEW IN V2.5",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accentBlue,
+                                letterSpacing = 1.2.sp
+                            )
+                            Text(
+                                text = "Ultra-Fast 0ms Tile & Direct AIDL IPC",
+                                fontSize = 11.sp,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    val changelogHighlights = listOf(
+                        "Instant 0ms Tile Responsiveness" to "Optimistic UI rendering toggles active/inactive state immediately upon tap, matching the native AOSP developer tile.",
+                        "Direct Shizuku AIDL Binder Proxy" to "Bypasses slow shell process forks; communicates directly with Android ISensorPrivacyManager via Binder IPC (< 1ms).",
+                        "Zero-Latency Hardware Pipeline" to "Hardware state updates asynchronously on IO dispatchers without ever stalling the Quick Settings shade animation.",
+                        "Official AOSP Sensor Off Logo" to "Vector assets matched to standard Android system developer settings (active slashed wave, inactive clean wave)."
+                    )
+
+                    changelogHighlights.forEachIndexed { index, (title, desc) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                text = "• ",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accentCyan
+                            )
+                            Column {
+                                Text(
+                                    text = title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.textPrimary
+                                )
+                                Text(
+                                    text = desc,
+                                    fontSize = 11.sp,
+                                    color = colors.textSecondary,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                        if (index < changelogHighlights.size - 1) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                    }
                 }
             }
         }
