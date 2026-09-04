@@ -320,7 +320,7 @@ class SensorsOffTileService : TileService() {
             if (bitmap != null) {
                 Icon.createWithBitmap(bitmap)
             } else {
-                Icon.createWithResource(this, R.drawable.ic_sensors_off)
+                Icon.createWithResource(this, if (isSensorsOff) R.drawable.tile_icon_sensorsoff_active else R.drawable.tile_icon_sensorsoff_inactive)
             }
         } else {
             val resId = when (iconStyle) {
@@ -328,8 +328,7 @@ class SensorsOffTileService : TileService() {
                 "camera_off" -> R.drawable.ic_camera_off
                 "mic_off" -> R.drawable.ic_mic_off
                 "motion_off" -> R.drawable.ic_motion_sensors_off
-                "aosp" -> R.drawable.ic_sensor_off
-                else -> R.drawable.ic_sensors_off
+                else -> if (isSensorsOff) R.drawable.tile_icon_sensorsoff_active else R.drawable.tile_icon_sensorsoff_inactive
             }
             Icon.createWithResource(this, resId)
         }

@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.4.0] - 2026-09-04
+
+### Official LinerSRT Vector Assets & Dual-State Dynamic Quick Settings Icon
+
+#### Problem Analysis
+- **User Question & Feedback**:
+  1. *"in this zip the dev use official. analyze the zip and implement same official sensor off logo"*
+  2. *"why 2? in pic"* (User attached screenshot of Android Battery Optimization showing both `com.aistudio.sensorsoff.pomujq` and `SensorOff`).
+- **Analysis of LinerSRT Zip**:
+  - In LinerSRT's `SensorsOff-1.3`, the developer uses two separate vector files:
+    - `tile_icon_sensorsoff_active.xml`: The official Android pulse telemetry wave with the diagonal strike slash (`M21.966,2 L2,22`).
+    - `tile_icon_sensorsoff_inactive.xml`: The official Android pulse telemetry wave without the slash (`M0.752,12...`).
+    - In `SensorsOffTileService.java`, it switches between `activeIcon` when sensors are disabled and `inactiveIcon` when sensors are enabled.
+- **Root Cause of "2 in pic"**:
+  - The user has two separate applications installed on their device simultaneously:
+    1. `com.aistudio.sensorsoff.pomujq` (Our AI Studio SensorsOff application).
+    2. `SensorOff` (LinerSRT's `ru.liner.sensorprivacy` application installed from GitHub).
+  - When filtering apps by searching `"sen"`, Android's Battery Optimization screen displays all matching installed packages.
+
+#### Code Changes
+- **`app/src/main/res/drawable/tile_icon_sensorsoff_active.xml`**:
+  - Added exact official vector from LinerSRT zip with stroke width, line caps, and slash overlay.
+- **`app/src/main/res/drawable/tile_icon_sensorsoff_inactive.xml`**:
+  - Added exact official unslashed wave vector from LinerSRT zip.
+- **`app/src/main/res/drawable/ic_sensor_off.xml` & `ic_sensor_on.xml`**:
+  - Aligned with the official AOSP active/inactive sensor wave vectors.
+- **`app/src/main/java/com/example/SensorsOffTileService.kt`**:
+  - Updated `updateTileState()` to dynamically set `tile.icon` to `tile_icon_sensorsoff_active` when Sensors Off is ON, and `tile_icon_sensorsoff_inactive` when Sensors Off is OFF.
+- **`app/src/main/AndroidManifest.xml`**:
+  - Pointed `SensorsOffTileService` default manifest icon to `@drawable/tile_icon_sensorsoff_active`.
+  - Added `android:installLocation="internalOnly"` to ensure proper system resolution.
+- **`app/build.gradle.kts`**:
+  - Bumped `versionCode = 24` and `versionName = "2.4"`.
+
+#### Telemetry & Verification
+- Validated with `compile_applet`. Quick Settings tile dynamically switches between active slashed sensor wave and inactive unslashed sensor wave.
+
+---
+
 ## [2.3.0] - 2026-09-04
 
 ### Official AOSP Sensor Off Icon & On/Off Tile Subtitle Alignment
