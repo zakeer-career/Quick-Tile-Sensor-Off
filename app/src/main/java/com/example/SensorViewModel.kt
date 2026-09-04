@@ -56,6 +56,7 @@ data class SensorUiState(
     val logs: List<String> = emptyList(),
     val tileSettings: TileSettingsState = TileSettingsState(),
     val showExperimentalToggles: Boolean = false,
+    val isKeepAliveEnabled: Boolean = false,
     val sensorList: List<SensorItem> = listOf(
         SensorItem("camera", "Camera", "Hardware Sensor", false, "ic_camera"),
         SensorItem("mic", "Microphone", "Audio Input", false, "ic_mic"),
@@ -214,6 +215,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
             val themeMode = ShizukuManager.getAppThemeMode(context)
             val launcherAlias = ShizukuManager.getAppLauncherAlias(context)
+            val isKeepAlive = SensorsOffBackgroundService.isKeepAliveEnabled(context)
 
             val updatedSensors = _uiState.value.sensorList.map { sensor ->
                 val sensorBlocked = ShizukuManager.getIndividualSensorState(context, sensor.id, knownGlobalState = isOff)
@@ -242,6 +244,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                     appThemeMode = themeMode,
                     appLauncherAlias = launcherAlias,
                     showExperimentalToggles = showExp,
+                    isKeepAliveEnabled = isKeepAlive,
                     tileSettings = TileSettingsState(
                         iconStyle = tileIconStyle,
                         customLabel = tileLabelText,
@@ -272,9 +275,9 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         // 2. Perform system operations on background IO pool
         viewModelScope.launch(Dispatchers.IO) {
             isActionRunning = true
+            val appContext = getApplication<Application>().applicationContext
             try {
-                val context = getApplication<Application>().applicationContext
-                val success = ShizukuManager.setSensorsOffState(context, target)
+                val success = ShizukuManager.setSensorsOffState(appContext, target)
 
                 if (success) {
                     addLog("Status: Successfully set Master SensorsOff = $target and synced all sensors")
@@ -287,6 +290,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             } finally {
                 isActionRunning = false
                 refreshState()
+                SensorsOffBackgroundService.update(appContext)
             }
         }
     }
@@ -320,7 +324,15 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 _uiState.update { it.copy(sensorList = revertedSensors, isSensorsOff = revertedAny) }
             }
             refreshState()
+            SensorsOffBackgroundService.update(context)
         }
+    }
+
+    fun setKeepAliveEnabled(enabled: Boolean) {
+        val context = getApplication<Application>().applicationContext
+        SensorsOffBackgroundService.setKeepAliveEnabled(context, enabled)
+        _uiState.update { it.copy(isKeepAliveEnabled = enabled) }
+        addLog("Background Keep-Alive Service ${if (enabled) "ENABLED" else "DISABLED"}")
     }
 
     fun updateTileSettings(

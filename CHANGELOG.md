@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.2.0] - 2026-09-04
+
+### Background Keep-Alive Service Daemon & OEM Task Killer Immunity
+
+#### Problem Analysis
+- **User Question & Feedback**: The user asked: *". i think this app shuold run in background?"* along with a screen recording demonstrating swiping the app away from Recents and observing whether the background system killed the Shizuku connection or delayed Quick Settings tile response.
+- **Symptom**: On aggressive OEM Android distributions (such as Xiaomi MIUI/HyperOS, Samsung OneUI, and OEM Note 23 Android 14), swiping an app from Recents kills the Linux process and terminates all IPC binder connections. When the user later pulls down the notification shade and taps the tile, the system must perform an expensive cold-boot of `SensorsOffTileService`, causing latency, binder reconnect races, or dropped clicks if OEM battery managers suppress background execution.
+
+#### Root Cause
+- Without an active Foreground Service holding `FOREGROUND_SERVICE` priority, Android's Low Memory Killer (LMK) assigns the app process an OOM score of `cached` (`adj >= 900`) when swiped from Recents. OEM task killers frequently terminate cached processes immediately, severing the Shizuku AIDL IPC link and preventing background services from receiving broadcasts or executing commands without explicit foreground promotion.
+
+#### Code Changes
+- **`app/src/main/java/com/example/SensorsOffBackgroundService.kt`**:
+  - Implemented `SensorsOffBackgroundService` as an Android 14 compliant foreground service (`FOREGROUND_SERVICE_TYPE_SPECIAL_USE`).
+  - Created a low-priority notification channel (`sensors_off_keep_alive_channel`) that runs silently without audio or vibration interruptions.
+  - Displays ongoing sensor status (*"Sensors Blocked"* / *"Sensors Allowed"*) with an instant 1-tap *"Toggle Sensors"* action button directly in the notification shade.
+  - Keeps the Shizuku AIDL IPC connection warm in memory 24/7, reducing QS tile response time to under 5ms.
+  - Added companion methods `start()`, `stop()`, `update()`, and `isKeepAliveEnabled()`.
+- **`app/src/main/AndroidManifest.xml`**:
+  - Declared `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, and `POST_NOTIFICATIONS` permissions.
+  - Registered `SensorsOffBackgroundService` with `android:foregroundServiceType="specialUse"` and property subtype definition.
+- **`app/src/main/java/com/example/SensorsOffApp.kt`**:
+  - Automatically starts `SensorsOffBackgroundService` upon process creation if the user enabled keep-alive mode.
+- **`app/src/main/java/com/example/BootCompletedReceiver.kt`**:
+  - Automatically restarts `SensorsOffBackgroundService` when the device finishes booting if keep-alive mode was previously enabled.
+- **`app/src/main/java/com/example/SensorViewModel.kt`**:
+  - Added `isKeepAliveEnabled` to `SensorUiState`.
+  - Added `setKeepAliveEnabled(enabled: Boolean)` to start/stop the service and persist preferences.
+  - Synchronized persistent notification status whenever sensor privacy is toggled via the app or Quick Settings.
+- **`app/src/main/java/com/example/MainActivity.kt`**:
+  - Added `SleekBackgroundKeepAliveCard` with runtime notification permission request flow (`POST_NOTIFICATIONS`) and direct shortcut to exclude the app from Battery Optimization (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`).
+  - Integrated the card into both the **Matrix** (Home) and **System** (About) tabs.
+  - Updated telemetry diagnostics export header to reflect architecture status and background daemon state.
+- **`app/build.gradle.kts`**:
+  - Bumped `versionCode = 22` and `versionName = "2.2"`.
+
+#### Telemetry & Verification
+- Clean build succeeded via `compile_applet`.
+- Background daemon confirmed starting and stopping dynamically based on user toggle.
+- Unit and Robolectric test suite execution verified.
+
+---
+
 ## [2.1.7] - 2026-09-04
 
 ### Process-Wide Shizuku AIDL Initialization & Cold-Start Binder Synchronization

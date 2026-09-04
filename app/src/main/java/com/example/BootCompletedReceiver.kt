@@ -21,6 +21,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 context,
                 ComponentName(context, SensorsOffTileService::class.java)
             )
+            if (SensorsOffBackgroundService.isKeepAliveEnabled(context)) {
+                SensorsOffBackgroundService.start(context)
+            }
         } catch (e: Throwable) {
             Log.e("BootCompletedReceiver", "Failed to request listening state for tile", e)
         }

@@ -17,6 +17,9 @@ class SensorsOffApp : Application() {
         try {
             TileLogManager.initialize(this)
             ShizukuManager.initialize(this)
+            if (SensorsOffBackgroundService.isKeepAliveEnabled(this)) {
+                SensorsOffBackgroundService.start(this)
+            }
         } catch (e: Throwable) {
             Log.e("SensorsOffApp", "Failed during application initialization", e)
         }

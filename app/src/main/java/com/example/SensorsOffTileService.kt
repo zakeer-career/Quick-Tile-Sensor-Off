@@ -288,6 +288,7 @@ class SensorsOffTileService : TileService() {
 
             withContext(Dispatchers.Main) {
                 updateTileState(confirmedState)
+                SensorsOffBackgroundService.update(applicationContext)
             }
         }
     }

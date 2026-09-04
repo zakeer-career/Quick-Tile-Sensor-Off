@@ -236,6 +236,16 @@ fun SleekHomeTabContent(
             )
         }
 
+        // Background Keep-Alive Daemon Card
+        item {
+            SleekBackgroundKeepAliveCard(
+                isKeepAliveEnabled = uiState.isKeepAliveEnabled,
+                onToggleKeepAlive = { enabled ->
+                    viewModel.setKeepAliveEnabled(enabled)
+                }
+            )
+        }
+
         if (uiState.showExperimentalToggles) {
             // Monitored Sensors List Header (Experimental Mode)
             item {
@@ -1368,12 +1378,13 @@ fun SleekLogsTabContent(
             appendLine("==================================================")
             appendLine("           SensorsOff Advanced Telemetry          ")
             appendLine("==================================================")
-            appendLine("App Version       : 2.0 (SensorsOff)")
+            appendLine("App Version       : 2.2 (SensorsOff)")
             appendLine("Device            : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
             appendLine("Session Uptime    : ${tileDiagnostics.getUptimeString(System.currentTimeMillis())}")
             appendLine("Quick Tile State  : ${tileDiagnostics.lastState}")
             appendLine("Quick Tile Mode   : ${tileDiagnostics.blockMode}")
-            appendLine("Tile Service      : SensorsOffTileService (ACTIVE_TILE)")
+            appendLine("Tile Architecture : SensorsOffTileService (Passive SystemUI Mode)")
+            appendLine("Background Daemon : ${if (uiState.isKeepAliveEnabled) "ACTIVE (Immune to Task Killer)" else "STANDBY (On-Demand)"}")
             appendLine("Last Action       : ${tileDiagnostics.lastAction} at ${tileDiagnostics.lastActionTime}")
             tileDiagnostics.lastLatencyMs?.let { appendLine("Last Latency      : ${it}ms") }
             appendLine("==================================================")
@@ -1967,7 +1978,7 @@ fun SleekAboutTabContent(
                     )
 
                     Text(
-                        text = "Version 2.0",
+                        text = "Version 2.2",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -2007,8 +2018,18 @@ fun SleekAboutTabContent(
                     SleekInfoRow(label = "Shizuku Integration", value = if (uiState.isShizukuAuthorized) "Authorized (Active)" else "Inactive")
                     SleekInfoRow(label = "Root Privileges", value = if (uiState.isRootAvailable) "Granted" else "None")
                     SleekInfoRow(label = "Hardware Privacy State", value = if (uiState.isSensorsOff) "Privacy Mode Active" else "Sensors Enabled")
+                    SleekInfoRow(label = "Background Keep-Alive", value = if (uiState.isKeepAliveEnabled) "Running (Foreground Daemon)" else "Disabled (On-Demand)")
                 }
             }
+        }
+
+        item {
+            SleekBackgroundKeepAliveCard(
+                isKeepAliveEnabled = uiState.isKeepAliveEnabled,
+                onToggleKeepAlive = { enabled ->
+                    viewModel.setKeepAliveEnabled(enabled)
+                }
+            )
         }
 
         item {
@@ -2331,5 +2352,155 @@ fun SleekNavItem(
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
             color = if (isSelected) colors.accentCyan else colors.textMuted
         )
+    }
+}
+
+@Composable
+fun SleekBackgroundKeepAliveCard(
+    isKeepAliveEnabled: Boolean,
+    onToggleKeepAlive: (Boolean) -> Unit
+) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        onToggleKeepAlive(true)
+        if (!isGranted) {
+            Toast.makeText(context, "Notification permission recommended to maintain keep-alive status", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isKeepAliveEnabled) colors.accentCyan.copy(alpha = 0.5f) else (if (colors.isDark) colors.glowColor else colors.border)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isKeepAliveEnabled) colors.accentCyan.copy(alpha = 0.15f) else colors.softBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = "Background Keep-Alive",
+                        tint = if (isKeepAliveEnabled) colors.accentCyan else colors.textMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Background Keep-Alive",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        if (isKeepAliveEnabled) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(colors.accentCyan.copy(alpha = 0.2f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "ACTIVE",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = colors.accentCyan
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = if (isKeepAliveEnabled) "Protected from OEM task killers" else "Run in background to stay active",
+                        fontSize = 11.sp,
+                        color = colors.textSecondary
+                    )
+                }
+
+                Switch(
+                    checked = isKeepAliveEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                                androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    android.Manifest.permission.POST_NOTIFICATIONS
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                onToggleKeepAlive(true)
+                            }
+                        } else {
+                            onToggleKeepAlive(false)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = colors.accentCyan,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = colors.softBg
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Runs a lightweight persistent foreground service so Android and OEM task killers (HyperOS, MIUI, Samsung) never kill the app when swiped from Recents. Maintains Shizuku connection 24/7 for instant Quick Settings tile response, plus adds a status notification with a 1-tap toggle.",
+                fontSize = 12.sp,
+                color = colors.textSecondary,
+                lineHeight = 17.sp
+            )
+
+            if (isKeepAliveEnabled) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(Settings.ACTION_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentCyan)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BatteryChargingFull,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Exclude from Battery Optimization",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
     }
 }
