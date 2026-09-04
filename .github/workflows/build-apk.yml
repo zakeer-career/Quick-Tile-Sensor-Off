@@ -72,21 +72,24 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           compression-level: 1
 
+      - name: Generate Release Notes from CHANGELOG
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            awk '/^## \[/{count++} count==1{if ($0 ~ /^---/) exit; print}' CHANGELOG.md > RELEASE_NOTES.md
+          fi
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "### SensorsOff Release ${{ steps.get_version.outputs.VERSION_TAG }}" > RELEASE_NOTES.md
+            echo "Automatic build and release from SensorsOff repository." >> RELEASE_NOTES.md
+          fi
+
       - name: Create GitHub Release
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/debug/*.apk
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.get_version.outputs.VERSION_TAG }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || steps.get_version.outputs.VERSION_TAG }}
-          body: |
-            SensorsOff Release ${{ steps.get_version.outputs.VERSION_TAG }}
-
-            ### What's New
-            - Active Pre-warmed TileService with zero-latency quick toggle
-            - Direct SystemUI synchronization and instant state reflection
-            - Multi-backend privilege execution (Shizuku, Root su, ADB Secure Settings)
-            - Live hardware sensor telemetry and diagnostics matrix
+          name: SensorsOff ${{ github.ref_type == 'tag' && github.ref_name || steps.get_version.outputs.VERSION_TAG }}
+          body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
         env:

@@ -2451,6 +2451,24 @@ fun SleekBackgroundKeepAliveCard(
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
+    val powerManager = remember { context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager }
+    var isIgnoringBattery by remember {
+        mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true)
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isIgnoringBattery = powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -2562,30 +2580,47 @@ fun SleekBackgroundKeepAliveCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = {
-                        try {
-                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
+                        if (isIgnoringBattery) {
+                            Toast.makeText(context, "Battery optimization is already disabled (SensorsOff is Unrestricted)!", Toast.LENGTH_SHORT).show()
+                        } else {
                             try {
-                                val intent = Intent(Settings.ACTION_SETTINGS)
+                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
                                 context.startActivity(intent)
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentCyan)
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (isIgnoringBattery) colors.accentGreen else colors.accentCyan
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isIgnoringBattery) colors.accentGreen.copy(alpha = 0.5f) else colors.accentCyan.copy(alpha = 0.5f)
+                    )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.BatteryChargingFull,
+                        imageVector = if (isIgnoringBattery) Icons.Default.CheckCircle else Icons.Default.BatteryChargingFull,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
+                        tint = if (isIgnoringBattery) colors.accentGreen else colors.accentCyan
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Exclude from Battery Optimization",
+                        text = if (isIgnoringBattery) "Battery Optimization Excluded (Unrestricted)" else "Exclude from Battery Optimization (Direct Prompt)",
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        color = if (isIgnoringBattery) colors.accentGreen else colors.accentCyan
                     )
                 }
             }

@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.6.2] - 2026-09-04
+
+### Automated Dynamic GitHub Release Notes Generation via CI/CD Workflow
+
+#### Problem Analysis
+- **User Question**:
+  - *"xan we use build-apk-yml file to change in github whats new?"*
+- **Underlying Limitation**:
+  - When GitHub Actions ran the `build-apk.yml` workflow to compile APKs and create GitHub Releases, the "What's New" text published on GitHub was static and never reflected newly added features or optimizations.
+
+#### Root Cause
+- In `.github/workflows/build-apk.yml`, the `Create GitHub Release` step had a static, hardcoded `body:` string from version 2.0. It did not pull updates from `CHANGELOG.md`.
+
+#### Code Changes
+- **`/.github/workflows/build-apk.yml`**:
+  - Added an automated extraction step: `Generate Release Notes from CHANGELOG`.
+  - Parses the newest release section from `CHANGELOG.md` using `awk` and writes it to `RELEASE_NOTES.md`.
+  - Configured `softprops/action-gh-release@v2` with `body_path: RELEASE_NOTES.md` instead of hardcoded text.
+  - Now, whenever code is pushed to GitHub, the GitHub Release will automatically feature the exact, latest "What's New" notes from `CHANGELOG.md`.
+
+#### Telemetry & Verification
+- Validated YAML structure and verified Android applet build via `compile_applet`.
+
+---
+
+## [2.6.1] - 2026-09-04
+
+### Direct Battery Optimization Exemption System Dialog & Dynamic Status Tracking
+
+#### Problem Analysis
+- **User Issue**:
+  - Clicking *"Exclude from Battery Optimization"* opened the general Android Settings app list instead of directly showing the native OS confirmation dialog prompt with **[Allow]** and **[Deny]**.
+- **Root Cause**:
+  1. **Missing Manifest Permission**: Android requires `<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />` in `AndroidManifest.xml` to allow an app to display the direct system dialog prompt. When absent, the system throws a `SecurityException`, forcing apps into the generic settings list.
+  2. **Indirect Intent Action**: `SleekBackgroundKeepAliveCard` in `MainActivity.kt` was invoking `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS` (which opens the global list) rather than `Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` with the package URI `package:${context.packageName}`.
+
+#### Code Changes
+- **`app/src/main/AndroidManifest.xml`**:
+  - Added `<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />`.
+- **`app/src/main/java/com/example/MainActivity.kt`**:
+  - Configured `SleekBackgroundKeepAliveCard` to dispatch `Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` targeted to `package:${context.packageName}`, triggering the direct system confirmation prompt.
+  - Added real-time tracking using `PowerManager.isIgnoringBatteryOptimizations()` and a Compose `LifecycleEventObserver` (updating on `ON_RESUME`).
+  - Added dynamic button states: shows an active green badge (*"✓ Battery Optimization Excluded (Unrestricted)"*) when granted, and provides clear feedback when already unrestricted.
+
+#### Telemetry & Verification
+- Clean build verified via `compile_applet`.
+- Direct system dialog triggers immediately upon click with native "Allow" and "Deny" options.
+
+---
+
 ## [2.6.0] - 2026-09-04
 
 ### Zero-Allocation Touch Pipeline, ContentObserver Reactivity & Redundant IPC Elimination
