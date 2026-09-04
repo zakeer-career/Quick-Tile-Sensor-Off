@@ -24,11 +24,13 @@ object ShizukuManager {
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         isBinderConnected = true
+        cachedSensorPrivacyService = null
         Log.i(TAG, "Shizuku binder received process-wide")
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         isBinderConnected = false
+        cachedSensorPrivacyService = null
         Log.w(TAG, "Shizuku binder disconnected process-wide")
     }
 
@@ -158,11 +160,14 @@ object ShizukuManager {
      * matching the latency of Android's native Quick Settings developer tiles.
      */
     fun getSensorPrivacyService(): ISensorPrivacyManager? {
+        val cached = cachedSensorPrivacyService
+        if (cached != null && cached.asBinder().isBinderAlive) {
+            return cached
+        }
         if (!isShizukuRunning() || !isShizukuAuthorized()) {
             cachedSensorPrivacyService = null
             return null
         }
-        cachedSensorPrivacyService?.let { return it }
         return try {
             val binder = SystemServiceHelper.getSystemService("sensor_privacy") ?: return null
             val wrapper = ShizukuBinderWrapper(binder)
@@ -773,7 +778,13 @@ object ShizukuManager {
         try {
             val spm = getSensorPrivacyService()
             if (spm != null) {
-                return spm.isSensorPrivacyEnabled
+                if (spm.isSensorPrivacyEnabled) return true
+                try {
+                    if (spm.isToggleSensorPrivacyEnabled(1, 1) && spm.isToggleSensorPrivacyEnabled(1, 2)) {
+                        return true
+                    }
+                } catch (t: Throwable) {}
+                return false
             }
         } catch (e: Throwable) {
             Log.d(TAG, "AIDL binder query note: ${e.message}")

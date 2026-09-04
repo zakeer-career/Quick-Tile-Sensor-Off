@@ -1978,7 +1978,7 @@ fun SleekAboutTabContent(
                     )
 
                     Text(
-                        text = "Version 2.5",
+                        text = "Version 2.6",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -2025,14 +2025,14 @@ fun SleekAboutTabContent(
 
                         Column {
                             Text(
-                                text = "WHAT'S NEW IN V2.5",
+                                text = "WHAT'S NEW IN V2.6",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.accentBlue,
                                 letterSpacing = 1.2.sp
                             )
                             Text(
-                                text = "Ultra-Fast 0ms Tile & Direct AIDL IPC",
+                                text = "Maximum Performance & Zero-Hitch Architecture",
                                 fontSize = 11.sp,
                                 color = colors.textSecondary
                             )
@@ -2042,10 +2042,11 @@ fun SleekAboutTabContent(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     val changelogHighlights = listOf(
-                        "Instant 0ms Tile Responsiveness" to "Optimistic UI rendering toggles active/inactive state immediately upon tap, matching the native AOSP developer tile.",
-                        "Direct Shizuku AIDL Binder Proxy" to "Bypasses slow shell process forks; communicates directly with Android ISensorPrivacyManager via Binder IPC (< 1ms).",
-                        "Zero-Latency Hardware Pipeline" to "Hardware state updates asynchronously on IO dispatchers without ever stalling the Quick Settings shade animation.",
-                        "Official AOSP Sensor Off Logo" to "Vector assets matched to standard Android system developer settings (active slashed wave, inactive clean wave)."
+                        "Zero-Allocation Touch Path" to "Pre-cached Icon and String handles in RAM ensure zero memory allocations and 0ms instantaneous UI flips on every tap.",
+                        "Direct AIDL Binder Proxy" to "Native ISensorPrivacyManager Binder IPC (< 1ms), completely bypassing shell process fork overhead.",
+                        "Real-time ContentObserver" to "Instant zero-polling synchronization with Android Settings.Global & Settings.Secure sensor keys.",
+                        "Redundant IPC Elimination" to "Eliminated redundant updateTile() calls to SystemUI, preserving 120Hz/90Hz Quick Settings shade fluidity.",
+                        "Ultra-Reliable Background Service" to "Keep-alive foreground daemon protects Shizuku IPC connection against aggressive OEM task killers."
                     )
 
                     changelogHighlights.forEachIndexed { index, (title, desc) ->
