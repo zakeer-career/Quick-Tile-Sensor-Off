@@ -56,9 +56,20 @@ class SensorsOffBackgroundService : Service() {
             }
             ACTION_TOGGLE -> {
                 serviceScope.launch {
-                    val isCurrentlyOff = ShizukuManager.getSensorsOffState(applicationContext)
+                    val mode = ShizukuManager.getTileBlockMode(applicationContext)
+                    val isCurrentlyOff = if (mode == "cam_mic") {
+                        ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                                ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                    } else {
+                        ShizukuManager.getSensorsOffState(applicationContext)
+                    }
                     val targetState = !isCurrentlyOff
-                    ShizukuManager.setSensorsOffState(applicationContext, targetState, skipNotify = true)
+                    if (mode == "cam_mic") {
+                        ShizukuManager.setIndividualSensorState(applicationContext, "camera", targetState, skipNotify = true)
+                        ShizukuManager.setIndividualSensorState(applicationContext, "mic", targetState, skipNotify = true)
+                    } else {
+                        ShizukuManager.setSensorsOffState(applicationContext, targetState, skipNotify = true)
+                    }
 
                     // Refresh QS tile
                     try {
@@ -102,8 +113,13 @@ class SensorsOffBackgroundService : Service() {
     }
 
     private fun buildStatusNotification(): Notification {
-        val isOff = ShizukuManager.getSensorsOffState(applicationContext)
         val mode = ShizukuManager.getTileBlockMode(applicationContext)
+        val isOff = if (mode == "cam_mic") {
+            ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                    ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+        } else {
+            ShizukuManager.getSensorsOffState(applicationContext)
+        }
         val modeTitle = if (mode == "cam_mic") "Camera & Mic" else "All Hardware Sensors"
 
         val title = if (isOff) "Sensors Blocked" else "Sensors Allowed"

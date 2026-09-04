@@ -79,6 +79,14 @@ Their initial work on system sensor privacy controls on Android provided the bas
 
 ---
 
+## Documentation & Changelog
+
+- **[CHANGELOG.md](CHANGELOG.md)**: Full release notes, problem analyses, root causes, and verification metrics following Keep a Changelog format.
+- **[CONVENTIONAL_COMMITS.md](CONVENTIONAL_COMMITS.md)**: Complete ledger of standardized Conventional Commit messages for all releases, formatted for git commit workflows.
+- **[PROBLEM_ANALYSIS_ROOT_CAUSE.md](PROBLEM_ANALYSIS_ROOT_CAUSE.md)**: Comprehensive repository of all deep technical problem analyses, operating system root causes, and engineered resolutions.
+
+---
+
 ## Privileged Permission Setup
 
 ### Option 1: Shizuku (Recommended)

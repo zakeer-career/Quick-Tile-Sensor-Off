@@ -95,8 +95,8 @@ class SensorsOffTileService : TileService() {
                 val executionStartTime = System.currentTimeMillis()
 
                 val success = if (cachedBlockMode == "cam_mic") {
-                    val camSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "camera", target)
-                    val micSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "mic", target)
+                    val camSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "camera", target, skipNotify = true)
+                    val micSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "mic", target, skipNotify = true)
                     camSuccess && micSuccess
                 } else {
                     ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
@@ -122,10 +122,13 @@ class SensorsOffTileService : TileService() {
 
                 withContext(Dispatchers.Main) {
                     pendingTargetState = null
-                    if (!success) {
-                        val confirmed = ShizukuManager.getSensorsOffState(applicationContext)
-                        updateTileState(confirmed)
+                    val confirmed = if (cachedBlockMode == "cam_mic") {
+                        ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                                ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                    } else {
+                        ShizukuManager.getSensorsOffState(applicationContext)
                     }
+                    updateTileState(confirmed)
                     SensorsOffBackgroundService.update(applicationContext)
                 }
             }
@@ -242,7 +245,11 @@ class SensorsOffTileService : TileService() {
                 pendingTargetState!!
             } else {
                 val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-                prefs.getBoolean("sensors_off_enabled", false)
+                if (cachedBlockMode == "cam_mic") {
+                    prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+                } else {
+                    prefs.getBoolean("sensors_off_enabled", false)
+                }
             }
             updateTileState(isSensorsOff)
         } catch (e: Throwable) {

@@ -166,12 +166,15 @@ object ShizukuManager {
     }
 
     /**
-     * Direct Parcel Binder query for global sensor privacy state (Codes 5, 4).
+     * Direct Parcel Binder query for global sensor privacy state.
+     * Android 12, 13, 14, 15: Transaction Code 6 (isSensorPrivacyEnabled)
+     * Android 11: Transaction Code 4
+     * Android 10: Transaction Code 3
      * < 1ms latency, 100% public SDK API (IBinder.transact, Parcel).
      */
     fun queryDirectSensorPrivacy(): Boolean? {
         val wrapper = getSensorPrivacyBinder() ?: return null
-        for (code in intArrayOf(5, 4)) {
+        for (code in intArrayOf(6, 4, 3)) {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             try {
@@ -194,30 +197,45 @@ object ShizukuManager {
 
     /**
      * Direct Parcel Binder query for individual toggle state (Mic=1, Camera=2).
+     * Android 12, 13, 14, 15: Code 8 (isToggleSensorPrivacyEnabled(toggleType, sensor))
+     * Fallback: Code 7 (isCombinedToggleSensorPrivacyEnabled(sensor))
      * < 1ms latency, 100% public SDK API (IBinder.transact, Parcel).
      */
     fun queryDirectToggleSensorPrivacy(sensorCode: Int): Boolean? {
         val wrapper = getSensorPrivacyBinder() ?: return null
-        for (code in intArrayOf(6, 7)) {
-            val data = Parcel.obtain()
-            val reply = Parcel.obtain()
-            try {
-                data.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
-                data.writeInt(1) // toggleType = 1 (individual toggle)
-                data.writeInt(sensorCode)
-                val res = wrapper.transact(code, data, reply, 0)
-                if (res) {
-                    reply.readException()
-                    val isEnabled = reply.readInt() != 0
-                    return isEnabled
-                }
-            } catch (t: Throwable) {
-                // Try next code
-            } finally {
-                data.recycle()
-                reply.recycle()
+        // Code 8: boolean isToggleSensorPrivacyEnabled(int toggleType, int sensor)
+        val data8 = Parcel.obtain()
+        val reply8 = Parcel.obtain()
+        try {
+            data8.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
+            data8.writeInt(1) // toggleType = 1 (software toggle)
+            data8.writeInt(sensorCode)
+            if (wrapper.transact(8, data8, reply8, 0)) {
+                reply8.readException()
+                return reply8.readInt() != 0
             }
+        } catch (t: Throwable) {
+        } finally {
+            data8.recycle()
+            reply8.recycle()
         }
+
+        // Fallback Code 7: boolean isCombinedToggleSensorPrivacyEnabled(int sensor)
+        val data7 = Parcel.obtain()
+        val reply7 = Parcel.obtain()
+        try {
+            data7.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
+            data7.writeInt(sensorCode)
+            if (wrapper.transact(7, data7, reply7, 0)) {
+                reply7.readException()
+                return reply7.readInt() != 0
+            }
+        } catch (t: Throwable) {
+        } finally {
+            data7.recycle()
+            reply7.recycle()
+        }
+
         return null
     }
 
@@ -291,8 +309,12 @@ object ShizukuManager {
 
         var globalSuccess = false
 
-        // Direct low-level Parcel Binder transact: Android 14/13 (code 9), Android 12 (code 8), Android 11 (code 4)
-        for (txCode in intArrayOf(9, 8, 4)) {
+        // Direct low-level Parcel Binder transact:
+        // Android 12, 13, 14, 15: code 9 (setSensorPrivacy(boolean enable))
+        // Android 11: code 5 (setSensorPrivacy(boolean enable))
+        // Android 10: code 4 (setSensorPrivacy(boolean enable))
+        // (Code 8 is strictly excluded because it is read-only getter isToggleSensorPrivacyEnabled)
+        for (txCode in intArrayOf(9, 5, 4)) {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             try {
@@ -317,7 +339,9 @@ object ShizukuManager {
             }
         }
 
-        // Granular Mic (1) and Camera (2) toggle via transaction code 10
+        // Granular Mic (1) and Camera (2) toggle via transaction code 10:
+        // void setToggleSensorPrivacy(int userId, int source, int sensor, boolean enable)
+        var granularSuccess = true
         for (sensor in intArrayOf(1, 2)) {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
@@ -327,15 +351,20 @@ object ShizukuManager {
                 data.writeInt(1) // source = QS Tile (1)
                 data.writeInt(sensor)
                 data.writeInt(targetVal)
-                wrapper.transact(10, data, reply, 0)
+                if (wrapper.transact(10, data, reply, 0)) {
+                    reply.readException()
+                } else {
+                    granularSuccess = false
+                }
             } catch (t: Throwable) {
+                granularSuccess = false
             } finally {
                 data.recycle()
                 reply.recycle()
             }
         }
 
-        return globalSuccess
+        return globalSuccess || granularSuccess
     }
 
     /**
@@ -407,54 +436,45 @@ object ShizukuManager {
 
         // 2. Direct AIDL / Binder Transact via Shizuku (< 1ms latency!)
         val directBinderSuccess = invokeDirectSensorPrivacyTransact(turnOff)
-        if (directBinderSuccess) {
-            val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-            prefs.edit()
-                .putBoolean("sensors_off_enabled", turnOff)
-                .putBoolean("sensor_blocked_camera", turnOff)
-                .putBoolean("sensor_blocked_mic", turnOff)
-                .putBoolean("sensor_blocked_motion", turnOff)
-                .putBoolean("sensor_blocked_gyro", turnOff)
-                .putBoolean("sensor_blocked_proximity", turnOff)
-                .putBoolean("sensor_blocked_light", turnOff)
-                .apply()
 
-            if (!skipNotify) {
-                notifyTileServiceToUpdate(context)
-            }
-            Log.d(TAG, "Successfully toggled SensorPrivacy via direct AIDL binder IPC in < 1ms")
-            return true
-        }
-
-        // 3. Fallback: Lean native shell commands (Only native binaries, no heavy app_process / settings put forks)
+        // 3. Lean native shell commands fallback with valid AOSP command syntax
+        var shellSuccess = false
         val fastCommand = if (turnOff) {
-            "service call sensor_privacy 9 i32 1 ; service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 1 ; service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 1 ; cmd sensor_privacy set all_sensors_off true 2>/dev/null"
+            "service call sensor_privacy 9 i32 1 ; service call sensor_privacy 10 i32 0 i32 1 i32 1 i32 1 ; service call sensor_privacy 10 i32 0 i32 1 i32 2 i32 1 ; cmd sensor_privacy enable 0 microphone ; cmd sensor_privacy enable 0 camera ; settings put global sensors_off 1 ; settings put secure sensor_privacy 1"
         } else {
-            "service call sensor_privacy 9 i32 0 ; service call sensor_privacy 10 i32 0 i32 0 i32 1 i32 0 ; service call sensor_privacy 10 i32 0 i32 0 i32 2 i32 0 ; cmd sensor_privacy set all_sensors_off false 2>/dev/null"
+            "service call sensor_privacy 9 i32 0 ; service call sensor_privacy 10 i32 0 i32 1 i32 1 i32 0 ; service call sensor_privacy 10 i32 0 i32 1 i32 2 i32 0 ; cmd sensor_privacy disable 0 microphone ; cmd sensor_privacy disable 0 camera ; settings put global sensors_off 0 ; settings put secure sensor_privacy 0"
         }
 
-        var executedSuccessfully = false
+        if (!directBinderSuccess) {
+            if (isShizukuRunning() && isShizukuAuthorized()) {
+                try {
+                    runShizukuCommand(fastCommand)
+                    shellSuccess = true
+                    Log.d(TAG, "Executed lean SensorPrivacy IPC command via Shizuku shell successfully")
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Shizuku execution failed", e)
+                }
+            }
 
-        if (isShizukuRunning() && isShizukuAuthorized()) {
-            try {
-                runShizukuCommand(fastCommand)
-                executedSuccessfully = true
-                Log.d(TAG, "Executed lean SensorPrivacy IPC command via Shizuku shell successfully")
-            } catch (e: Throwable) {
-                Log.e(TAG, "Shizuku execution failed", e)
+            if (!shellSuccess && isRootAvailable()) {
+                try {
+                    runRootCommand(fastCommand)
+                    shellSuccess = true
+                    Log.d(TAG, "Executed lean SensorPrivacy IPC command via Root SU successfully")
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Root SU execution failed", e)
+                }
+            }
+        } else {
+            // Keep Settings table in sync via Shizuku shell if app lacks WRITE_SECURE_SETTINGS
+            if (!hasSecureSettingsPermission(context) && isShizukuRunning() && isShizukuAuthorized()) {
+                try {
+                    runShizukuCommand("settings put global sensors_off $targetValue ; settings put secure sensor_privacy $targetValue")
+                } catch (e: Throwable) {}
             }
         }
 
-        // 4. Fallback: Direct Root SU (Single invocation)
-        if (!executedSuccessfully && isRootAvailable()) {
-            try {
-                runRootCommand(fastCommand)
-                executedSuccessfully = true
-                Log.d(TAG, "Executed lean SensorPrivacy IPC command via Root SU successfully")
-            } catch (e: Throwable) {
-                Log.e(TAG, "Root SU execution failed", e)
-            }
-        }
+        val overallSuccess = directBinderSuccess || shellSuccess
 
         // Always sync local SharedPreferences for consistent app state
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
@@ -473,13 +493,13 @@ object ShizukuManager {
             notifyTileServiceToUpdate(context)
         }
 
-        return executedSuccessfully
+        return overallSuccess
     }
 
     /**
      * Toggles an individual hardware sensor (Camera, Mic, Motion, etc.)
      */
-    fun setIndividualSensorState(context: Context, sensorId: String, turnOff: Boolean): Boolean {
+    fun setIndividualSensorState(context: Context, sensorId: String, turnOff: Boolean, skipNotify: Boolean = false): Boolean {
         Log.d(TAG, "Setting individual sensor '$sensorId' blocked state to $turnOff")
         val targetVal = if (turnOff) 1 else 0
 
@@ -496,13 +516,6 @@ object ShizukuManager {
 
         // 2. Direct AIDL / Parcel Binder Transact via Shizuku (< 1ms latency!)
         val directSuccess = invokeDirectIndividualSensorTransact(sensorId, turnOff)
-        if (directSuccess) {
-            val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("sensor_blocked_$sensorId", turnOff).apply()
-            notifyTileServiceToUpdate(context)
-            Log.d(TAG, "Direct Binder toggled sensor $sensorId to $turnOff in < 1ms")
-            return true
-        }
 
         val sensorCode = when (sensorId.lowercase()) {
             "camera" -> 2
@@ -510,39 +523,44 @@ object ShizukuManager {
             else -> 0
         }
 
-        val fastCmd = if (sensorCode > 0) {
-            "service call sensor_privacy 10 i32 0 i32 0 i32 $sensorCode i32 $targetVal ; cmd sensor_privacy set-sensor-state 0 $sensorCode $turnOff 2>/dev/null"
-        } else {
-            "cmd sensor_privacy set-sensor-state 0 $turnOff 2>/dev/null"
-        }
+        val sensorName = if (sensorCode == 2) "camera" else "microphone"
+        val cmdAction = if (turnOff) "enable" else "disable"
 
-        var executedSuccessfully = false
-
-        if (isShizukuRunning() && isShizukuAuthorized()) {
-            try {
-                runShizukuCommand(fastCmd)
-                executedSuccessfully = true
-            } catch (e: Throwable) {
-                Log.e(TAG, "Shizuku individual sensor toggle failed", e)
+        var shellSuccess = false
+        if (!directSuccess && sensorCode > 0) {
+            val fastCmd = "service call sensor_privacy 10 i32 0 i32 1 i32 $sensorCode i32 $targetVal ; cmd sensor_privacy $cmdAction 0 $sensorName ; settings put secure sensor_privacy_$sensorName $targetVal"
+            if (isShizukuRunning() && isShizukuAuthorized()) {
+                try {
+                    runShizukuCommand(fastCmd)
+                    shellSuccess = true
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Shizuku individual sensor toggle failed", e)
+                }
             }
-        }
 
-        if (!executedSuccessfully && isRootAvailable()) {
-            try {
-                runRootCommand(fastCmd)
-                executedSuccessfully = true
-            } catch (e: Throwable) {
-                Log.e(TAG, "Root individual sensor toggle failed", e)
+            if (!shellSuccess && isRootAvailable()) {
+                try {
+                    runRootCommand(fastCmd)
+                    shellSuccess = true
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Root individual sensor toggle failed", e)
+                }
             }
+        } else if (directSuccess && !hasSecureSettingsPermission(context) && isShizukuRunning() && isShizukuAuthorized() && sensorCode > 0) {
+            try {
+                runShizukuCommand("settings put secure sensor_privacy_$sensorName $targetVal")
+            } catch (e: Throwable) {}
         }
 
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("sensor_blocked_$sensorId", turnOff).apply()
 
         // Explicitly request SystemUI to update the Quick Settings tile immediately
-        notifyTileServiceToUpdate(context)
+        if (!skipNotify) {
+            notifyTileServiceToUpdate(context)
+        }
 
-        return executedSuccessfully
+        return directSuccess || shellSuccess
     }
 
     fun getIndividualSensorState(context: Context, sensorId: String, knownGlobalState: Boolean? = null): Boolean {
@@ -868,30 +886,7 @@ object ShizukuManager {
             Log.d(TAG, "SensorPrivacyManager reflection check: ${e.message}")
         }
 
-        // Layer 2: Instant in-memory check of Global / Secure settings (0ms latency)
-        try {
-            val cr = context.contentResolver
-            val gVal = Settings.Global.getInt(cr, "sensors_off", -1)
-            if (gVal == 1) return true
-            if (gVal == 0) return false
-
-            val sVal = Settings.Secure.getInt(cr, "sensor_privacy", -1)
-            if (sVal == 1) return true
-            if (sVal == 0) return false
-
-            // Additional OEM keys check
-            val extraKeys = listOf("all_sensors_off", "sensor_privacy_camera", "sensor_privacy_microphone")
-            for (key in extraKeys) {
-                val valG = Settings.Global.getInt(cr, key, -1)
-                if (valG == 1) return true
-                val valS = Settings.Secure.getInt(cr, key, -1)
-                if (valS == 1) return true
-            }
-        } catch (e: Throwable) {
-            Log.d(TAG, "Settings table check error: ${e.message}")
-        }
-
-        // Layer 3: Ultra-fast single command check via Shizuku if settings table was unavailable
+        // Layer 2: Ultra-fast single command check via Shizuku if available (authoritative system state)
         if (isShizukuRunning() && isShizukuAuthorized()) {
             try {
                 val cmdOut = runShizukuCommand("cmd sensor_privacy is-sensor-privacy-enabled").trim()
@@ -902,7 +897,7 @@ object ShizukuManager {
             }
         }
 
-        // Layer 4: Check live status via Root SU if available
+        // Layer 3: Check live status via Root SU if available
         if (isRootAvailable()) {
             try {
                 val rootCmd = runRootCommand("cmd sensor_privacy is-sensor-privacy-enabled").trim()
@@ -911,6 +906,20 @@ object ShizukuManager {
             } catch (e: Throwable) {
                 Log.w(TAG, "Could not query sensor_privacy via Root SU", e)
             }
+        }
+
+        // Layer 4: In-memory check of Global / Secure settings (0ms latency fallback)
+        try {
+            val cr = context.contentResolver
+            val gVal = Settings.Global.getInt(cr, "sensors_off", -1)
+            if (gVal == 1) return true
+            if (gVal == 0) return false
+
+            val sVal = Settings.Secure.getInt(cr, "sensor_privacy", -1)
+            if (sVal == 1) return true
+            if (sVal == 0) return false
+        } catch (e: Throwable) {
+            Log.d(TAG, "Settings table check error: ${e.message}")
         }
 
         // Layer 5: Fallback to SharedPreferences
