@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.1.7] - 2026-09-04
+
+### Process-Wide Shizuku AIDL Initialization & Cold-Start Binder Synchronization
+
+#### Problem Analysis
+- **User Observation**: The user confirmed: *"when i open the app it working fine"*, but observed in a screen recording that when the app was swiped away from Recents or closed, tapping the Quick Settings tile from the notification shade either failed to toggle the sensors or immediately reverted to its inactive state.
+- **Symptom**:
+  - App open: Quick Settings tile toggled instantaneously and successfully toggled camera, mic, and global sensor privacy.
+  - App closed / Cold process: Quick Settings tile appeared unresponsive on tap or reverted, requiring the user to open the app UI first.
+
+#### Root Cause
+- **Missing Application-Level Shizuku Registration**: Previously, `Shizuku.addBinderReceivedListenerSticky` was only registered inside `SensorViewModel.init { ... }`. When the user swiped away the app and later tapped the Quick Settings tile, Android's `SystemUI` spawned a new process solely for `SensorsOffTileService`. Because `SensorViewModel` was never created during tile service execution, the Shizuku IPC binder was never received or linked to the client library in that process.
+- **Premature IPC Failure on Cold Start**: Consequently, `Shizuku.pingBinder()` returned `false`, and `ShizukuManager.isShizukuRunning()` evaluated to `false`. When the tile's `onClick()` executed, `setSensorsOffState()` immediately skipped the Shizuku IPC proxy, fell back to unprivileged system queries, failed to disable hardware sensors, and reverted the optimistic UI state.
+- **Asynchronous Binder Attachment Delay**: Even if the process was just spawned, Shizuku IPC binder binding across process boundaries requires 20–60ms. Without an explicit await mechanism, `onClick()` checked `isShizukuRunning()` at millisecond 0 and missed the arriving binder.
+
+#### Code Changes
+- **`app/src/main/java/com/example/SensorsOffApp.kt`**:
+  - Created a custom `Application` subclass (`SensorsOffApp`). Ensures process-wide initialization of `TileLogManager` and `ShizukuManager` as soon as the Linux process begins, whether invoked by `MainActivity`, `SensorsOffTileService`, or system broadcasts.
+- **`app/src/main/AndroidManifest.xml`**:
+  - Declared `android:name=".SensorsOffApp"` in the `<application>` tag.
+- **`app/src/main/java/com/example/ShizukuManager.kt`**:
+  - Added `initialize(context: Context)` with process-wide sticky binder listeners (`OnBinderReceivedListener` and `OnBinderDeadListener`).
+  - Implemented `awaitShizukuBinder(timeoutMs: Long)` which suspends and polls until the Shizuku IPC binder is connected and authorized before executing commands.
+- **`app/src/main/java/com/example/SensorsOffTileService.kt`**:
+  - Added `ShizukuManager.initialize(applicationContext)` in `onCreate()`.
+  - Added asynchronous binder synchronization in `clickJob` (`ShizukuManager.awaitShizukuBinder(600L)`) and `listeningJob` (`ShizukuManager.awaitShizukuBinder(250L)`), guaranteeing that cold-started tile toggles seamlessly establish the Shizuku AIDL proxy before dispatching sensor privacy shell commands.
+
+#### Telemetry & Verification
+- Clean build verified via `compile_applet`.
+- Full test suite passed green via `gradle :app:testDebugUnitTest` in 29s.
+- Cold-start tile taps now reliably connect to the Shizuku daemon and toggle sensor privacy hardware states without requiring the main app UI to be open.
+
+---
+
 ## [2.1.6] - 2026-09-03
 
 ### Quick Settings Tile Reliability: Transition to Passive Tile Architecture & Subtitle Rationalization

@@ -35,6 +35,7 @@ class SensorsOffTileService : TileService() {
     override fun onCreate() {
         super.onCreate()
         TileLogManager.initialize(applicationContext)
+        ShizukuManager.initialize(applicationContext)
         TileLogManager.logTileEvent(
             applicationContext,
             "Tile Service Created",
@@ -87,6 +88,10 @@ class SensorsOffTileService : TileService() {
         // 2. Asynchronous verification of live hardware state
         listeningJob = serviceScope.launch {
             try {
+                if (ShizukuManager.isShizukuInstalled(applicationContext) && !ShizukuManager.isShizukuRunning()) {
+                    ShizukuManager.awaitShizukuBinder(250L)
+                }
+
                 val blockMode = ShizukuManager.getTileBlockMode(applicationContext)
                 val label = ShizukuManager.getTileLabelText(applicationContext)
                 val iconStyle = ShizukuManager.getTileIconStyle(applicationContext)
@@ -214,6 +219,12 @@ class SensorsOffTileService : TileService() {
         clickJob?.cancel()
         clickJob = serviceScope.launch {
             val executionStartTime = System.currentTimeMillis()
+
+            // If Shizuku is installed but binder not connected yet (cold start from SystemUI), await binder
+            if (ShizukuManager.isShizukuInstalled(applicationContext) && !ShizukuManager.isShizukuRunning()) {
+                ShizukuManager.awaitShizukuBinder(600L)
+            }
+
             val backendUsed: String
 
             if (blockMode == "cam_mic") {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
+import kotlinx.coroutines.delay
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.DataOutputStream
@@ -12,6 +13,56 @@ import java.io.InputStreamReader
 object ShizukuManager {
     private const val TAG = "ShizukuManager"
     const val SHIZUKU_REQ_CODE = 1001
+
+    @Volatile
+    private var isBinderConnected: Boolean = false
+    @Volatile
+    private var listenerInitialized: Boolean = false
+
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        isBinderConnected = true
+        Log.i(TAG, "Shizuku binder received process-wide")
+    }
+
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        isBinderConnected = false
+        Log.w(TAG, "Shizuku binder disconnected process-wide")
+    }
+
+    /**
+     * Initializes process-wide Shizuku AIDL binder listeners.
+     * Safe to call repeatedly from Application or Services.
+     */
+    fun initialize(context: Context) {
+        if (listenerInitialized) return
+        synchronized(this) {
+            if (listenerInitialized) return
+            listenerInitialized = true
+            try {
+                Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+                Shizuku.addBinderDeadListener(binderDeadListener)
+                Log.d(TAG, "Registered process-wide Shizuku binder listeners")
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to register Shizuku binder listeners: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Suspends until the Shizuku IPC binder is connected and authorized,
+     * or until timeoutMs expires. Essential for background TileService operations.
+     */
+    suspend fun awaitShizukuBinder(timeoutMs: Long = 600L): Boolean {
+        if (isShizukuRunning() && isShizukuAuthorized()) return true
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            if (isShizukuRunning() && isShizukuAuthorized()) {
+                return true
+            }
+            delay(40)
+        }
+        return isShizukuRunning() && isShizukuAuthorized()
+    }
 
     fun isShizukuInstalled(context: Context): Boolean {
         return try {
