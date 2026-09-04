@@ -416,7 +416,7 @@ object ShizukuManager {
 
     fun getTileIconStyle(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("tile_icon_style", "stock") ?: "stock"
+        return prefs.getString("tile_icon_style", "aosp") ?: "aosp"
     }
 
     fun getTileLabelText(context: Context): String {
@@ -427,13 +427,13 @@ object ShizukuManager {
 
     fun getTileActiveSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("tile_active_subtitle", "Blocked") ?: "Blocked"
+        return prefs.getString("tile_active_subtitle", "On") ?: "On"
     }
 
     fun getTileDisabledSubtitleText(context: Context): String {
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
         val text = prefs.getString("tile_disabled_subtitle", "Off") ?: "Off"
-        return if (text.isBlank() || text.equals("Available", ignoreCase = true)) "Off" else text
+        return if (text.isBlank() || text.equals("Available", ignoreCase = true) || text.equals("Blocked", ignoreCase = true)) "Off" else text
     }
 
     fun getTileBlockMode(context: Context): String {

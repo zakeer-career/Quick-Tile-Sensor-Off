@@ -50,7 +50,7 @@
 
         <service
             android:name=".SensorsOffTileService"
-            android:icon="@drawable/ic_sensors_off"
+            android:icon="@drawable/ic_sensor_off"
             android:label="@string/tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">

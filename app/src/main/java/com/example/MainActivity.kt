@@ -698,9 +698,9 @@ fun SleekTileCustomizationCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             listOf(
-                                "stock" to "Stock Wave",
-                                "shield" to "Shield",
-                                "camera_off" to "Cam Off"
+                                "aosp" to "Official AOSP",
+                                "stock" to "Telemetry Wave",
+                                "shield" to "Shield"
                             ).forEach { (styleKey, styleName) ->
                                 FilterChip(
                                     selected = iconStyle == styleKey,
@@ -720,9 +720,9 @@ fun SleekTileCustomizationCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             listOf(
+                                "camera_off" to "Cam Off",
                                 "mic_off" to "Mic Off",
-                                "motion_off" to "Motion Off",
-                                "aosp" to "AOSP"
+                                "motion_off" to "Motion Off"
                             ).forEach { (styleKey, styleName) ->
                                 FilterChip(
                                     selected = iconStyle == styleKey,
@@ -1378,7 +1378,7 @@ fun SleekLogsTabContent(
             appendLine("==================================================")
             appendLine("           SensorsOff Advanced Telemetry          ")
             appendLine("==================================================")
-            appendLine("App Version       : 2.2 (SensorsOff)")
+            appendLine("App Version       : 2.3 (SensorsOff)")
             appendLine("Device            : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
             appendLine("Session Uptime    : ${tileDiagnostics.getUptimeString(System.currentTimeMillis())}")
             appendLine("Quick Tile State  : ${tileDiagnostics.lastState}")
@@ -1978,7 +1978,7 @@ fun SleekAboutTabContent(
                     )
 
                     Text(
-                        text = "Version 2.2",
+                        text = "Version 2.3",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )

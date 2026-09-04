@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.3.0] - 2026-09-04
+
+### Official AOSP Sensor Off Icon & On/Off Tile Subtitle Alignment
+
+#### Problem Analysis
+- **User Question & Feedback**: The user referenced the LinerSRT SensorsOff GitHub repository and asked: *"this repo get official toolgle icon of sensor off why mine is not look official? why mine show block etc official show on of?"*
+- **Symptom**: The tile looked different from native Android AOSP Quick Settings developer tiles, and the subtitle displayed "Blocked" rather than standard Android SystemUI conventions ("On" when the feature is active, "Off" when inactive).
+
+#### Root Cause
+- Default preferences in `ShizukuManager` and `TileSettingsState` were set to `iconStyle = "stock"` (a custom telemetry waveform) and `activeSubtitle = "Blocked"`. While the exact Google AOSP circular slashed sensor icon (`ic_sensor_off.xml`) existed in the codebase under the name `"aosp"`, it was not configured as the default manifest icon or default selection.
+
+#### Code Changes
+- **`app/src/main/res/drawable/ic_sensor_off.xml` & `AndroidManifest.xml`**:
+  - Set `SensorsOffTileService` default manifest icon to `@drawable/ic_sensor_off` (the official Google AOSP developer tile slashed-circle vector asset).
+- **`app/src/main/java/com/example/ShizukuManager.kt`**:
+  - Changed default `tile_icon_style` fallback from `"stock"` to `"aosp"`.
+  - Changed default `tile_active_subtitle` from `"Blocked"` to `"On"`.
+  - Changed default `tile_disabled_subtitle` fallback to `"Off"`.
+- **`app/src/main/java/com/example/SensorsOffTileService.kt`**:
+  - Updated `updateTileState()` to default to `"On"` when Sensors Off is active and `"Off"` when Sensors Off is inactive, matching official Android Quick Settings behavior.
+- **`app/src/main/java/com/example/SensorViewModel.kt`**:
+  - Updated `TileSettingsState` defaults: `iconStyle = "aosp"`, `activeSubtitle = "On"`, `disabledSubtitle = "Off"`.
+- **`app/src/main/java/com/example/MainActivity.kt`**:
+  - Reordered tile icon choices in `SleekTileCustomizationCard` to place **"Official AOSP"** as the primary option.
+  - Bumped telemetry and UI display versions to 2.3.
+- **`app/build.gradle.kts`**:
+  - Bumped `versionCode = 23` and `versionName = "2.3"`.
+
+#### Telemetry & Verification
+- Clean build verified via `compile_applet`.
+- Quick Settings tile renders the official Google AOSP slashed circle icon with standard "On" and "Off" subtitles.
+
+---
+
 ## [2.2.0] - 2026-09-04
 
 ### Background Keep-Alive Service Daemon & OEM Task Killer Immunity

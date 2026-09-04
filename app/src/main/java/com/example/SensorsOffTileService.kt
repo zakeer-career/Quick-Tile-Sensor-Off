@@ -340,7 +340,12 @@ class SensorsOffTileService : TileService() {
             tile.state = Tile.STATE_ACTIVE
             tile.label = displayLabel
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = if (activeSubtitle.isNotBlank()) activeSubtitle else "Blocked"
+                val sub = if (activeSubtitle.isNotBlank() && !activeSubtitle.equals("Blocked", ignoreCase = true)) {
+                    activeSubtitle
+                } else {
+                    "On"
+                }
+                tile.subtitle = sub
             }
             tile.icon = tileIcon
         } else {
