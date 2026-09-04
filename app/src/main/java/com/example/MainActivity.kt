@@ -2043,7 +2043,7 @@ fun SleekAboutTabContent(
 
                     val changelogHighlights = listOf(
                         "Zero-Allocation Touch Path" to "Pre-cached Icon and String handles in RAM ensure zero memory allocations and 0ms instantaneous UI flips on every tap.",
-                        "Direct AIDL Binder Proxy" to "Native ISensorPrivacyManager Binder IPC (< 1ms), completely bypassing shell process fork overhead.",
+                        "Direct Binder IPC" to "Native SensorPrivacy Binder IPC (< 1ms), completely bypassing shell process fork overhead.",
                         "Real-time ContentObserver" to "Instant zero-polling synchronization with Android Settings.Global & Settings.Secure sensor keys.",
                         "Redundant IPC Elimination" to "Eliminated redundant updateTile() calls to SystemUI, preserving 120Hz/90Hz Quick Settings shade fluidity.",
                         "Ultra-Reliable Background Service" to "Keep-alive foreground daemon protects Shizuku IPC connection against aggressive OEM task killers."

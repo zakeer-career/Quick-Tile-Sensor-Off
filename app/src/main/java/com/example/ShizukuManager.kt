@@ -2,7 +2,6 @@ package com.example
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.hardware.ISensorPrivacyManager
 import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
@@ -25,13 +24,11 @@ object ShizukuManager {
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         isBinderConnected = true
-        cachedSensorPrivacyService = null
         Log.i(TAG, "Shizuku binder received process-wide")
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         isBinderConnected = false
-        cachedSensorPrivacyService = null
         Log.w(TAG, "Shizuku binder disconnected process-wide")
     }
 
@@ -152,33 +149,76 @@ object ShizukuManager {
         }
     }
 
-    @Volatile
-    private var cachedSensorPrivacyService: ISensorPrivacyManager? = null
-
     /**
-     * Obtains the direct ISensorPrivacyManager AIDL interface using Shizuku's Binder Proxy.
-     * Direct IPC calls via this interface execute in < 1 millisecond without process forks,
-     * matching the latency of Android's native Quick Settings developer tiles.
+     * Obtains the raw sensor_privacy IBinder using Shizuku's Binder Wrapper.
+     * Direct Binder transactions execute in < 1 millisecond using public android.os.IBinder APIs,
+     * completely eliminating Android Hidden API linking errors.
      */
-    fun getSensorPrivacyService(): ISensorPrivacyManager? {
-        val cached = cachedSensorPrivacyService
-        if (cached != null && cached.asBinder().isBinderAlive) {
-            return cached
-        }
-        if (!isShizukuRunning() || !isShizukuAuthorized()) {
-            cachedSensorPrivacyService = null
-            return null
-        }
+    fun getSensorPrivacyBinder(): android.os.IBinder? {
+        if (!isShizukuRunning() || !isShizukuAuthorized()) return null
         return try {
             val binder = SystemServiceHelper.getSystemService("sensor_privacy") ?: return null
-            val wrapper = ShizukuBinderWrapper(binder)
-            val service = ISensorPrivacyManager.Stub.asInterface(wrapper)
-            cachedSensorPrivacyService = service
-            service
+            ShizukuBinderWrapper(binder)
         } catch (e: Throwable) {
-            Log.d(TAG, "Could not acquire ISensorPrivacyManager via Shizuku binder: ${e.message}")
+            Log.d(TAG, "Could not acquire sensor_privacy binder via Shizuku: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Direct Parcel Binder query for global sensor privacy state (Codes 5, 4).
+     * < 1ms latency, 100% public SDK API (IBinder.transact, Parcel).
+     */
+    fun queryDirectSensorPrivacy(): Boolean? {
+        val wrapper = getSensorPrivacyBinder() ?: return null
+        for (code in intArrayOf(5, 4)) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
+                val res = wrapper.transact(code, data, reply, 0)
+                if (res) {
+                    reply.readException()
+                    val isEnabled = reply.readInt() != 0
+                    return isEnabled
+                }
+            } catch (t: Throwable) {
+                // Try next code
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        return null
+    }
+
+    /**
+     * Direct Parcel Binder query for individual toggle state (Mic=1, Camera=2).
+     * < 1ms latency, 100% public SDK API (IBinder.transact, Parcel).
+     */
+    fun queryDirectToggleSensorPrivacy(sensorCode: Int): Boolean? {
+        val wrapper = getSensorPrivacyBinder() ?: return null
+        for (code in intArrayOf(6, 7)) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
+                data.writeInt(1) // toggleType = 1 (individual toggle)
+                data.writeInt(sensorCode)
+                val res = wrapper.transact(code, data, reply, 0)
+                if (res) {
+                    reply.readException()
+                    val isEnabled = reply.readInt() != 0
+                    return isEnabled
+                }
+            } catch (t: Throwable) {
+                // Try next code
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        return null
     }
 
     fun isRootAvailable(): Boolean {
@@ -246,57 +286,38 @@ object ShizukuManager {
      * Completes in < 1 millisecond.
      */
     fun invokeDirectSensorPrivacyTransact(turnOff: Boolean): Boolean {
-        if (!isShizukuRunning() || !isShizukuAuthorized()) return false
-        val binder = try {
-            SystemServiceHelper.getSystemService("sensor_privacy") ?: return false
-        } catch (e: Throwable) {
-            return false
-        }
-        val wrapper = ShizukuBinderWrapper(binder)
+        val wrapper = getSensorPrivacyBinder() ?: return false
         val targetVal = if (turnOff) 1 else 0
 
         var globalSuccess = false
 
-        // 1. Try AIDL proxy interface first
-        try {
-            val spm = ISensorPrivacyManager.Stub.asInterface(wrapper)
-            if (spm != null) {
-                spm.setSensorPrivacy(turnOff)
-                globalSuccess = true
-            }
-        } catch (t: Throwable) {
-            Log.d(TAG, "AIDL stub setSensorPrivacy: ${t.message}")
-        }
-
-        // 2. Direct Parcel Binder fallback for Android 14/13 (code 9), Android 12 (code 8), Android 11 (code 4)
-        if (!globalSuccess) {
-            for (txCode in intArrayOf(9, 8, 4)) {
-                val data = Parcel.obtain()
-                val reply = Parcel.obtain()
-                try {
-                    data.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
-                    data.writeInt(targetVal)
-                    val res = wrapper.transact(txCode, data, reply, 0)
-                    if (res) {
-                        try {
-                            reply.readException()
-                            globalSuccess = true
-                            Log.d(TAG, "Direct Binder transact code $txCode succeeded in < 1ms")
-                            break
-                        } catch (e: Throwable) {
-                            // Transaction returned exception, continue to next code
-                        }
+        // Direct low-level Parcel Binder transact: Android 14/13 (code 9), Android 12 (code 8), Android 11 (code 4)
+        for (txCode in intArrayOf(9, 8, 4)) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken("android.hardware.ISensorPrivacyManager")
+                data.writeInt(targetVal)
+                val res = wrapper.transact(txCode, data, reply, 0)
+                if (res) {
+                    try {
+                        reply.readException()
+                        globalSuccess = true
+                        Log.d(TAG, "Direct Binder transact code $txCode succeeded in < 1ms")
+                        break
+                    } catch (e: Throwable) {
+                        // Transaction returned exception, continue to next code
                     }
-                } catch (t: Throwable) {
-                    // Try next code
-                } finally {
-                    data.recycle()
-                    reply.recycle()
                 }
+            } catch (t: Throwable) {
+                // Try next code
+            } finally {
+                data.recycle()
+                reply.recycle()
             }
         }
 
-        // 3. Granular Mic (1) and Camera (2) toggle via transaction code 10
+        // Granular Mic (1) and Camera (2) toggle via transaction code 10
         for (sensor in intArrayOf(1, 2)) {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
@@ -322,13 +343,7 @@ object ShizukuManager {
      * Completes in < 1 millisecond.
      */
     fun invokeDirectIndividualSensorTransact(sensorId: String, turnOff: Boolean): Boolean {
-        if (!isShizukuRunning() || !isShizukuAuthorized()) return false
-        val binder = try {
-            SystemServiceHelper.getSystemService("sensor_privacy") ?: return false
-        } catch (e: Throwable) {
-            return false
-        }
-        val wrapper = ShizukuBinderWrapper(binder)
+        val wrapper = getSensorPrivacyBinder() ?: return false
         val sensorCode = when (sensorId.lowercase()) {
             "camera" -> 2
             "mic", "microphone" -> 1
@@ -337,25 +352,7 @@ object ShizukuManager {
         if (sensorCode == 0) return false
         val targetVal = if (turnOff) 1 else 0
 
-        // 1. Try AIDL proxy interface first
-        try {
-            val spm = ISensorPrivacyManager.Stub.asInterface(wrapper)
-            if (spm != null) {
-                try {
-                    spm.setToggleSensorPrivacy(0, 1, sensorCode, turnOff)
-                    return true
-                } catch (t: Throwable) {
-                    try {
-                        spm.setToggleSensorPrivacyForProfileGroup(0, 1, sensorCode, turnOff)
-                        return true
-                    } catch (t2: Throwable) {}
-                }
-            }
-        } catch (t: Throwable) {
-            Log.d(TAG, "AIDL stub individual toggle note: ${t.message}")
-        }
-
-        // 2. Direct Parcel Binder fallback via code 10
+        // Direct Parcel Binder transaction via code 10
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         return try {
@@ -555,25 +552,18 @@ object ShizukuManager {
             return true
         }
 
-        // Layer 0: Direct AIDL Binder via Shizuku (< 1ms latency)
-        try {
-            val spm = getSensorPrivacyService()
-            if (spm != null) {
-                val sensorCode = when (sensorId.lowercase()) {
-                    "camera" -> 2
-                    "mic", "microphone" -> 1
-                    else -> 0
-                }
-                if (sensorCode > 0) {
-                    try {
-                        if (spm.isToggleSensorPrivacyEnabled(1, sensorCode) ||
-                            spm.isCombinedToggleSensorPrivacyEnabled(sensorCode)) {
-                            return true
-                        }
-                    } catch (t: Throwable) {}
-                }
+        // Layer 0: Direct Parcel Binder query via Shizuku (< 1ms latency, 100% public SDK API)
+        val sensorCode = when (sensorId.lowercase()) {
+            "camera" -> 2
+            "mic", "microphone" -> 1
+            else -> 0
+        }
+        if (sensorCode > 0) {
+            val directQuery = queryDirectToggleSensorPrivacy(sensorCode)
+            if (directQuery != null) {
+                return directQuery
             }
-        } catch (t: Throwable) {}
+        }
 
         // Check native SensorPrivacyManager for camera / mic
         try {
@@ -840,22 +830,14 @@ object ShizukuManager {
     }
 
     fun getSensorsOffState(context: Context): Boolean {
-        // Layer 0: Direct AIDL Binder Proxy via Shizuku (< 1ms latency, identical to official dev tile)
-        try {
-            val spm = getSensorPrivacyService()
-            if (spm != null) {
-                if (spm.isSensorPrivacyEnabled) return true
-                try {
-                    if (spm.isToggleSensorPrivacyEnabled(1, 1) && spm.isToggleSensorPrivacyEnabled(1, 2)) {
-                        return true
-                    }
-                } catch (t: Throwable) {}
-                return false
-            }
-        } catch (e: Throwable) {
-            Log.d(TAG, "AIDL binder query note: ${e.message}")
-            cachedSensorPrivacyService = null
-        }
+        // Layer 0: Direct Parcel Binder query via Shizuku (< 1ms latency, 100% public SDK API)
+        val directGlobal = queryDirectSensorPrivacy()
+        if (directGlobal == true) return true
+
+        val camDirect = queryDirectToggleSensorPrivacy(2)
+        val micDirect = queryDirectToggleSensorPrivacy(1)
+        if (camDirect == true && micDirect == true) return true
+        if (directGlobal == false && camDirect == false && micDirect == false) return false
 
         // Layer 1: Check native Android SensorPrivacyManager directly via cached reflection
         try {
