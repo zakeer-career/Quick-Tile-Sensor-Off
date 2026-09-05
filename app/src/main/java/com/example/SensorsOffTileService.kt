@@ -99,9 +99,7 @@ class SensorsOffTileService : TileService() {
                 val executionStartTime = System.currentTimeMillis()
 
                 val success = if (cachedBlockMode == "cam_mic") {
-                    val camSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "camera", target, skipNotify = true)
-                    val micSuccess = ShizukuManager.setIndividualSensorState(applicationContext, "mic", target, skipNotify = true)
-                    camSuccess && micSuccess
+                    ShizukuManager.setCamMicSensorState(applicationContext, target, skipNotify = true)
                 } else {
                     ShizukuManager.setSensorsOffState(applicationContext, target, skipNotify = true)
                 }
