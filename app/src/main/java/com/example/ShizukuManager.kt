@@ -21,15 +21,27 @@ object ShizukuManager {
     private var isBinderConnected: Boolean = false
     @Volatile
     private var listenerInitialized: Boolean = false
+    @Volatile
+    private var appContextRef: java.lang.ref.WeakReference<Context>? = null
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         isBinderConnected = true
         Log.i(TAG, "Shizuku binder received process-wide")
+        appContextRef?.get()?.let { ctx ->
+            notifyTileServiceToUpdate(ctx)
+            SensorsOffBackgroundService.update(ctx)
+            TileLogManager.logPrivilegeEvent(ctx, "Shizuku Connected", "Shizuku IPC binder established", LogLevel.SUCCESS)
+        }
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         isBinderConnected = false
         Log.w(TAG, "Shizuku binder disconnected process-wide")
+        appContextRef?.get()?.let { ctx ->
+            notifyTileServiceToUpdate(ctx)
+            SensorsOffBackgroundService.update(ctx)
+            TileLogManager.logPrivilegeEvent(ctx, "Shizuku Disconnected", "Shizuku IPC binder died", LogLevel.WARN)
+        }
     }
 
     /**
@@ -37,6 +49,7 @@ object ShizukuManager {
      * Safe to call repeatedly from Application or Services.
      */
     fun initialize(context: Context) {
+        appContextRef = java.lang.ref.WeakReference(context.applicationContext)
         if (listenerInitialized) return
         synchronized(this) {
             if (listenerInitialized) return
@@ -280,6 +293,44 @@ object ShizukuManager {
         return context.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
     }
 
+    /**
+     * Checks if any viable privilege is available to toggle sensor privacy.
+     * True if WRITE_SECURE_SETTINGS is granted, Shizuku is authorized, or Root SU is available.
+     */
+    fun isPrivilegeAvailable(context: Context): Boolean {
+        return hasSecureSettingsPermission(context) ||
+                (isShizukuRunning() && isShizukuAuthorized()) ||
+                isRootAvailable()
+    }
+
+    /**
+     * On rooted devices, attempts to auto-start the Shizuku server daemon via root SU on boot.
+     */
+    fun tryAutoStartShizukuViaRoot(context: Context): Boolean {
+        if (!isRootAvailable()) return false
+        if (isShizukuRunning()) return true
+        Log.i(TAG, "Attempting to auto-start Shizuku daemon via root SU...")
+        val starterCmds = arrayOf(
+            "/system/bin/sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
+            "/data/user/0/moe.shizuku.privileged.api/files/starter",
+            "/data/data/moe.shizuku.privileged.api/files/starter"
+        )
+        for (cmd in starterCmds) {
+            try {
+                runRootCommand(cmd)
+                Thread.sleep(300)
+                if (isShizukuRunning()) {
+                    Log.i(TAG, "Shizuku successfully started via root command: $cmd")
+                    TileLogManager.logPrivilegeEvent(context, "Shizuku Root Auto-Start", "Shizuku daemon started via root successfully", LogLevel.SUCCESS)
+                    return true
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "Starter command attempt failed: $cmd - ${e.message}")
+            }
+        }
+        return isShizukuRunning()
+    }
+
     fun requestShizukuPermission() {
         if (isShizukuRunning()) {
             try {
@@ -420,8 +471,10 @@ object ShizukuManager {
         val targetValue = if (turnOff) 1 else 0
         Log.d(TAG, "Setting SensorsOff state to $targetValue")
 
+        val hasSecureSettings = hasSecureSettingsPermission(context)
+
         // 1. Immediate in-memory write to Settings.Global/Secure if WRITE_SECURE_SETTINGS is present (0.2ms)
-        if (hasSecureSettingsPermission(context)) {
+        if (hasSecureSettings) {
             try {
                 Settings.Global.putInt(context.contentResolver, "sensors_off", targetValue)
                 try {
@@ -474,7 +527,7 @@ object ShizukuManager {
             }
         }
 
-        val overallSuccess = directBinderSuccess || shellSuccess
+        val overallSuccess = directBinderSuccess || shellSuccess || hasSecureSettings
 
         // Always sync local SharedPreferences for consistent app state
         val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
@@ -503,8 +556,10 @@ object ShizukuManager {
         Log.d(TAG, "Setting individual sensor '$sensorId' blocked state to $turnOff")
         val targetVal = if (turnOff) 1 else 0
 
+        val hasSecureSettings = hasSecureSettingsPermission(context)
+
         // 1. Direct ContentResolver update if WRITE_SECURE_SETTINGS is present
-        if (hasSecureSettingsPermission(context)) {
+        if (hasSecureSettings) {
             try {
                 if (sensorId.equals("camera", ignoreCase = true)) {
                     Settings.Secure.putInt(context.contentResolver, "sensor_privacy_camera", targetVal)
@@ -560,7 +615,7 @@ object ShizukuManager {
             notifyTileServiceToUpdate(context)
         }
 
-        return directSuccess || shellSuccess
+        return directSuccess || shellSuccess || hasSecureSettings
     }
 
     fun getIndividualSensorState(context: Context, sensorId: String, knownGlobalState: Boolean? = null): Boolean {

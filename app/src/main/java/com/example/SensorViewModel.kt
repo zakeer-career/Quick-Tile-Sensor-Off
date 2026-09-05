@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -443,12 +444,35 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 addLog("Shizuku is already authorized.", category = LogCategory.PRIVILEGE, level = LogLevel.SUCCESS)
             }
         } else {
-            addLog("Shizuku service is not running. Please start Shizuku app first.", category = LogCategory.PRIVILEGE, level = LogLevel.WARN)
-            TileLogManager.logPrivilegeEvent(context, "Shizuku Not Running", "Shizuku IPC binder ping returned false", LogLevel.WARN)
+            addLog("Shizuku service is not running. Launching Shizuku app...", category = LogCategory.PRIVILEGE, level = LogLevel.WARN)
+            TileLogManager.logPrivilegeEvent(context, "Shizuku Not Running", "Shizuku IPC binder ping returned false. Launching Shizuku app.", LogLevel.WARN)
+            launchShizukuApp()
         }
         viewModelScope.launch {
             delay(500)
             refreshState()
+        }
+    }
+
+    fun launchShizukuApp() {
+        val context = getApplication<Application>().applicationContext
+        try {
+            if (ShizukuManager.isRootAvailable()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val started = ShizukuManager.tryAutoStartShizukuViaRoot(context)
+                    if (started) {
+                        delay(500)
+                        refreshState()
+                    }
+                }
+            }
+            val launchIntent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+            if (launchIntent != null) {
+                launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+            }
+        } catch (e: Throwable) {
+            Log.e("SensorViewModel", "Failed to launch Shizuku: ${e.message}")
         }
     }
 

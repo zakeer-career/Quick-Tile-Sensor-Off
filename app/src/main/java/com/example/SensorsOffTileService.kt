@@ -1,6 +1,8 @@
 package com.example
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.database.ContentObserver
 import android.graphics.drawable.Icon
 import android.net.Uri
@@ -201,6 +203,20 @@ class SensorsOffTileService : TileService() {
         val startTime = System.currentTimeMillis()
         listeningJob?.cancel()
 
+        // Verify privilege status. If Shizuku is dead after reboot, guide user immediately
+        val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
+        if (!hasPrivilege) {
+            val tile = qsTile ?: return
+            tile.state = Tile.STATE_INACTIVE
+            tile.label = cachedDisplayLabel
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                tile.subtitle = "Tap: Start Shizuku"
+            }
+            cachedInactiveIcon?.let { tile.icon = it }
+            tile.updateTile()
+            return
+        }
+
         val now = System.currentTimeMillis()
         if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
             refreshTileImmediately()
@@ -240,6 +256,19 @@ class SensorsOffTileService : TileService() {
 
     private fun refreshTileImmediately() {
         try {
+            val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
+            if (!hasPrivilege) {
+                val tile = qsTile ?: return
+                tile.state = Tile.STATE_INACTIVE
+                tile.label = cachedDisplayLabel
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    tile.subtitle = "Tap: Start Shizuku"
+                }
+                cachedInactiveIcon?.let { tile.icon = it }
+                tile.updateTile()
+                return
+            }
+
             val now = System.currentTimeMillis()
             val isSensorsOff = if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
                 pendingTargetState!!
@@ -269,11 +298,41 @@ class SensorsOffTileService : TileService() {
         val isCurrentlyActive = (currentTileState == Tile.STATE_ACTIVE)
         val target = !isCurrentlyActive
 
-        // 3. Lock optimistic target state so rapid pull-down gestures don't flicker UI
+        // 3. Privilege availability check with graceful await & recovery
+        val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
+        if (!hasPrivilege) {
+            TileLogManager.logTileEvent(
+                applicationContext,
+                "QS Tile Tap Event",
+                "Touch detected while privileged service inactive. Awaiting Shizuku...",
+                LogLevel.INFO
+            )
+            serviceScope.launch(Dispatchers.IO) {
+                // Await up to 1200ms in case Shizuku binder is currently negotiating after boot
+                val connected = ShizukuManager.awaitShizukuBinder(1200L)
+                if (connected) {
+                    withContext(Dispatchers.Main) {
+                        pendingTargetState = target
+                        pendingTargetExpiryTimeMs = System.currentTimeMillis() + 2000L
+                        updateTileState(target)
+                    }
+                    toggleChannel.trySend(Pair(target, clickTime))
+                } else {
+                    withContext(Dispatchers.Main) {
+                        pendingTargetState = null
+                        refreshTileImmediately()
+                        launchShizukuOrApp()
+                    }
+                }
+            }
+            return
+        }
+
+        // 4. Lock optimistic target state so rapid pull-down gestures don't flicker UI
         pendingTargetState = target
         pendingTargetExpiryTimeMs = System.currentTimeMillis() + 2000L
 
-        // 4. Instant synchronous UI update (0ms, zero allocations)
+        // 5. Instant synchronous UI update (0ms, zero allocations)
         updateTileState(target)
 
         TileLogManager.logTileEvent(
@@ -283,8 +342,39 @@ class SensorsOffTileService : TileService() {
             LogLevel.INFO
         )
 
-        // 5. Asynchronous hardware toggle via conflated worker loop
+        // 6. Asynchronous hardware toggle via conflated worker loop
         toggleChannel.trySend(Pair(target, clickTime))
+    }
+
+    private fun launchShizukuOrApp() {
+        TileLogManager.logTileEvent(
+            applicationContext,
+            "Shizuku Required",
+            "Shizuku is not running after restart. Launching Shizuku helper.",
+            LogLevel.WARN
+        )
+        try {
+            val intent = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                ?: Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val pi = PendingIntent.getActivity(
+                    this,
+                    0,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                startActivityAndCollapse(pi)
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityAndCollapse(intent)
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to launch Shizuku: ${e.message}")
+        }
     }
 
     private fun updateTileState(isSensorsOff: Boolean) {

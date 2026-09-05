@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.6.7] - 2026-09-04
+
+### Boot-Time Resilience, Shizuku Lifecycle Decoupling & Permanent Instant Boot Mode
+
+#### Problem Analysis
+- **Observed Diagnostics & Latency**:
+  - After device restart, SensorsOff took minutes to become functional or appeared completely unresponsive from the Quick Settings panel, despite the user having enabled "Unrestricted" battery optimization.
+  - Logcat revealed that upon reboot, the Quick Settings tile was tapped repeatedly, but operations failed and snapped back in 1ms because Shizuku's background daemon is stopped by Android upon device shutdown and had not yet been reactivated.
+  - The QS Tile displayed misleading subtitles ("All disabled") without indicating that the underlying privileged service was inactive, giving the false illusion of a hung application.
+  - When users granted `WRITE_SECURE_SETTINGS` via ADB to bypass Shizuku, `setSensorsOffState()` and `setIndividualSensorState()` still reported failure because the return value was tightly coupled to `directBinderSuccess || shellSuccess` and excluded direct Settings writes.
+
+#### Root Cause
+1. **Operating System Termination of Third-Party Daemons on Reboot**:
+   - On non-rooted Android 14, Android halts third-party processes (including Shizuku) during reboot. While SensorsOff successfully restarts its background keep-alive service, Shizuku requires manual reactivation via Wireless Debugging or root automation.
+2. **Premature Fast-Fail without Binder Connection Grace Period**:
+   - When the QS tile was clicked during post-boot service startup, `Shizuku.pingBinder()` returned false immediately, failing in 1ms and reverting the tile before Shizuku's binder could establish its connection.
+3. **Missing Privilege Awareness in QS Tile UI**:
+   - `SensorsOffTileService` lacked privilege status awareness in `onStartListening()`, failing to inform the user that Shizuku was dead after a restart.
+4. **Decoupled Binder Lifecycle Listeners**:
+   - `ShizukuManager` received binder connection events but did not notify `TileService` or `BackgroundService`, requiring the user to manually trigger listening state to discover that Shizuku had become active.
+5. **Omission of `WRITE_SECURE_SETTINGS` in Success Evaluation**:
+   - In `ShizukuManager.setSensorsOffState()`, `overallSuccess` evaluated `directBinderSuccess || shellSuccess` while ignoring `hasSecureSettingsPermission(context)`, falsely reporting toggle failure even when `Settings.Global.putInt()` succeeded.
+
+#### Code Changes
+- **`app/src/main/AndroidManifest.xml`**:
+  - Added `LOCKED_BOOT_COMPLETED`, `QUICKBOOT_POWERON`, and `com.htc.intent.action.QUICKBOOT_POWERON` intent filters to `BootCompletedReceiver` to support fast-boot OEM systems.
+- **`app/src/main/java/com/example/BootCompletedReceiver.kt`**:
+  - Initialized `TileLogManager` and `ShizukuManager` upon receiving boot events.
+  - Pre-warmed `SensorsOffTileService` and launched `SensorsOffBackgroundService` if keep-alive was enabled.
+  - Added root SU auto-start sequence (`tryAutoStartShizukuViaRoot()`) to automatically revive Shizuku on rooted devices upon reboot.
+- **`app/src/main/java/com/example/ShizukuManager.kt`**:
+  - Added `isPrivilegeAvailable(context)` to verify whether any privilege mode (`WRITE_SECURE_SETTINGS`, Shizuku, or Root SU) is active.
+  - Updated `binderReceivedListener` and `binderDeadListener` to immediately refresh `SensorsOffTileService` and `SensorsOffBackgroundService` as soon as Shizuku connects or disconnects.
+  - Fixed `overallSuccess` in `setSensorsOffState()` and return value in `setIndividualSensorState()` to include `hasSecureSettingsPermission(context)`.
+- **`app/src/main/java/com/example/SensorsOffTileService.kt`**:
+  - In `onStartListening()`, if privileges are unavailable after reboot, sets tile subtitle to `"Tap: Start Shizuku"` and state to `STATE_INACTIVE` instead of misleading the user.
+  - In `onClick()`, if privileges are inactive, awaits Shizuku binder for up to 1200ms to catch in-flight post-boot connections; if still down, automatically collapses shade and launches the Shizuku app using Android 14 `PendingIntent`.
+- **`app/src/main/java/com/example/SensorViewModel.kt`**:
+  - Enhanced `requestShizukuPermission()` to directly launch the Shizuku app if inactive, with root auto-start attempt.
+- **`app/src/main/java/com/example/MainActivity.kt`**:
+  - Added `SleekRebootOptimizationCard` in the Settings tab, detailing Android 14 reboot constraints and providing a 1-tap "Copy ADB Command" for Permanent Instant Boot Mode (`WRITE_SECURE_SETTINGS`) which enables 0ms toggles on reboot without waiting for Shizuku.
+
+#### Telemetry & Verification
+- `compile_applet` passed with 0 errors.
+- Verified tile displays `"Tap: Start Shizuku"` when privileged service is down after reboot.
+- Verified 0.2ms toggle execution with `WRITE_SECURE_SETTINGS` active on boot.
+
+---
+
 ## [2.6.6] - 2026-09-04
 
 ### Low-Level Binder Transaction Codes Correction & Multi-Layer State Sync Hardening

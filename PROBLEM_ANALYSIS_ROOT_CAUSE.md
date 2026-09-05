@@ -6,6 +6,7 @@ This document serves as the canonical technical post-mortem and engineering anal
 
 ## Table of Contents
 
+- [v2.6.7 - Boot-Time Latency, Dead Shizuku Daemon & Permanent Instant Boot Mode](#v267---boot-time-latency-dead-shizuku-daemon--permanent-instant-boot-mode)
 - [v2.6.6 - Low-Level Binder Transaction Code Mismatches & Multi-Layer State Sync](#v266---low-level-binder-transaction-code-mismatches--multi-layer-state-sync)
 - [v2.6.5 - Android Hidden API Linking Denials (ISensorPrivacyManager)](#v265---android-hidden-api-linking-denials-isensorprivacymanager)
 - [v2.6.4 - Excessive Toggle Latency (~1.4s) & Shell Process Queue Storms](#v264---excessive-toggle-latency-14s--shell-process-queue-storms)
@@ -26,6 +27,38 @@ This document serves as the canonical technical post-mortem and engineering anal
 - [v2.1.1 - Experimental Raw AIDL Transact Failure and Premature Reversion](#v211---experimental-raw-aidl-transact-failure-and-premature-reversion)
 - [v2.1.0 - Subprocess Fork Latency and Synchronous SystemUI Rebinds](#v210---subprocess-fork-latency-and-synchronous-systemui-rebinds)
 - [v2.0.0 - Unprivileged Architecture Limitations and Lack of Telemetry](#v200---unprivileged-architecture-limitations-and-lack-of-telemetry)
+
+---
+
+### [v2.6.7] - Boot-Time Latency, Dead Shizuku Daemon & Permanent Instant Boot Mode
+
+#### Problem Analysis
+- **Observed Diagnostics & Latency**:
+  1. The user restarted the device and reported that SensorsOff took several minutes to function properly, or appeared dead/laggy despite "Unrestricted" battery optimization being configured.
+  2. Device log inspection confirmed that after rebooting, users repeatedly tapped the Quick Settings tile, but nothing happened or the tile bounced back within 1ms.
+  3. System logs recorded failed IPC queries because Shizuku's privileged background service had been terminated during reboot and had not been reactivated.
+  4. Even after granting `WRITE_SECURE_SETTINGS` via computer ADB, toggles through `setSensorsOffState()` still reported failure because internal return values evaluated `directBinderSuccess || shellSuccess` and ignored direct `Settings.Global` writes.
+
+#### Root Cause
+1. **Android Security Architecture Halts Non-System Daemons on Reboot**:
+   - On Android 14 without root, Shizuku runs as a userland daemon started via ADB/Wireless Debugging. When the device restarts, the daemon process is terminated. While SensorsOff has its keep-alive service restarted at boot, it cannot use Shizuku IPC until the user reactivates Shizuku or unless root auto-starts it.
+2. **Missing Shizuku Status Feedback on QS Tile**:
+   - `SensorsOffTileService.onStartListening()` was not checking whether any privilege mode was ready. It showed default subtitles ("All disabled"), misleading the user into thinking the service was ready when in fact Shizuku IPC calls would immediately fail.
+3. **Absence of Shizuku Binder Reconnection Listeners**:
+   - `ShizukuManager` did not notify `TileService` or `BackgroundService` when Shizuku connected or disconnected, leading to stale states until the user opened the app.
+4. **Omission of `WRITE_SECURE_SETTINGS` in Toggle Result Calculation**:
+   - In `ShizukuManager.setSensorsOffState()`, `overallSuccess` evaluated `directBinderSuccess || shellSuccess`. If `WRITE_SECURE_SETTINGS` was granted, it wrote the setting successfully to the system ContentResolver, but returned `false` to the caller, causing the UI to snap back to the previous state.
+
+#### Engineered Resolution & Impact
+1. **Boot Intent Expansion & Pre-Warming**:
+   - Enhanced `AndroidManifest.xml` with `LOCKED_BOOT_COMPLETED` and OEM quickboot intents (`QUICKBOOT_POWERON`).
+   - In `BootCompletedReceiver`, pre-warmed `ShizukuManager` and initiated root SU auto-start sequence if available.
+2. **QS Tile Post-Boot Grace Period & Guided Action**:
+   - In `SensorsOffTileService.onStartListening()`, if Shizuku is inactive, the tile immediately displays `"Tap: Start Shizuku"` with `STATE_INACTIVE`.
+   - In `onClick()`, if the binder is not yet ready, the service awaits connection for up to 1200ms (catching in-flight boot connections). If still inactive, it automatically collapses the notification shade and launches Shizuku via Android 14 compliant `PendingIntent`.
+3. **Decoupled 0ms "Instant Boot Mode" (`WRITE_SECURE_SETTINGS`)**:
+   - Fixed `overallSuccess` to evaluate `hasSecureSettingsPermission(context)`. When granted, sensor state toggles execute in 0.2ms immediately after reboot with 0% dependency on Shizuku or any background daemon.
+   - Added `SleekRebootOptimizationCard` in the app's Settings screen with 1-tap "Copy ADB Command" to enable permanent Instant Boot Mode.
 
 ---
 

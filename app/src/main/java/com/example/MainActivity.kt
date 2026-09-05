@@ -2121,6 +2121,15 @@ fun SleekAboutTabContent(
         }
 
         item {
+            SleekRebootOptimizationCard(
+                hasSecureSettings = uiState.hasSecureSettingsPermission,
+                isShizukuAuthorized = uiState.isShizukuAuthorized,
+                isRootAvailable = uiState.isRootAvailable,
+                onLaunchShizuku = { viewModel.launchShizukuApp() }
+            )
+        }
+
+        item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -2621,6 +2630,200 @@ fun SleekBackgroundKeepAliveCard(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = if (isIgnoringBattery) colors.accentGreen else colors.accentCyan
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SleekRebootOptimizationCard(
+    hasSecureSettings: Boolean,
+    isShizukuAuthorized: Boolean,
+    isRootAvailable: Boolean,
+    onLaunchShizuku: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val adbCmd = "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBg),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (hasSecureSettings) colors.accentGreen.copy(alpha = 0.4f)
+            else (if (colors.isDark) colors.glowColor else colors.border)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (hasSecureSettings) colors.accentGreen.copy(alpha = 0.15f)
+                            else colors.accentCyan.copy(alpha = 0.15f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (hasSecureSettings) Icons.Default.Bolt else Icons.Default.RestartAlt,
+                        contentDescription = "Reboot Reliability",
+                        tint = if (hasSecureSettings) colors.accentGreen else colors.accentCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "REBOOT & RESTART RELIABILITY",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (hasSecureSettings) colors.accentGreen else colors.accentCyan,
+                        letterSpacing = 1.2.sp
+                    )
+                    Text(
+                        text = if (hasSecureSettings) "Permanent 0ms Instant Boot Active" else "Optimize startup response after reboot",
+                        fontSize = 11.sp,
+                        color = colors.textSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "On non-rooted Android 14, system security architecture terminates non-system background processes (including Shizuku) during reboot. While SensorsOff restarts its background service on boot, Shizuku requires manual re-start via Wireless Debugging unless WRITE_SECURE_SETTINGS or root is configured.",
+                fontSize = 12.sp,
+                color = colors.textSecondary,
+                lineHeight = 17.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Option 1: Instant Boot Mode via ADB (Permanent, 0ms on boot)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (hasSecureSettings) colors.accentGreen.copy(alpha = 0.08f) else colors.softBg)
+                    .border(
+                        1.dp,
+                        if (hasSecureSettings) colors.accentGreen.copy(alpha = 0.35f) else colors.border,
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(14.dp)
+            ) {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (hasSecureSettings) Icons.Default.CheckCircle else Icons.Default.FlashOn,
+                            contentDescription = null,
+                            tint = if (hasSecureSettings) colors.accentGreen else colors.accentCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (hasSecureSettings) "INSTANT BOOT MODE (ACTIVE)" else "RECOMMENDED: INSTANT BOOT (PERMANENT)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hasSecureSettings) colors.accentGreen else colors.accentCyan,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = if (hasSecureSettings) {
+                            "WRITE_SECURE_SETTINGS is granted! Quick Settings tile toggles sensor privacy in 0.2ms immediately upon device reboot with zero wait for Shizuku."
+                        } else {
+                            "Grant WRITE_SECURE_SETTINGS once via computer ADB. This allows SensorsOff to write hardware sensor privacy directly on boot with 0-second delay, completely independent of Shizuku."
+                        },
+                        fontSize = 11.sp,
+                        color = colors.textSecondary,
+                        lineHeight = 16.sp
+                    )
+
+                    if (!hasSecureSettings) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.cardBg)
+                                .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = adbCmd,
+                                fontSize = 10.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = colors.accentCyan,
+                                lineHeight = 14.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(adbCmd))
+                                Toast.makeText(context, "ADB grant command copied to clipboard!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accentCyan),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentCyan.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Copy ADB Command", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Quick action: Launch Shizuku app
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onLaunchShizuku,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (isShizukuAuthorized) colors.accentGreen else colors.accentCyan
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isShizukuAuthorized) colors.accentGreen.copy(alpha = 0.4f) else colors.accentCyan.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isShizukuAuthorized) Icons.Default.CheckCircle else Icons.Default.Launch,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isShizukuAuthorized) "Shizuku Active (Click to Re-open)" else "Open Shizuku App to Start Service",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
