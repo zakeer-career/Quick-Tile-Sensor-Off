@@ -1378,7 +1378,7 @@ fun SleekLogsTabContent(
             appendLine("==================================================")
             appendLine("           SensorsOff Advanced Telemetry          ")
             appendLine("==================================================")
-            appendLine("App Version       : 2.5 (SensorsOff)")
+            appendLine("App Version       : ${BuildConfig.VERSION_NAME} (SensorsOff)")
             appendLine("Device            : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})")
             appendLine("Session Uptime    : ${tileDiagnostics.getUptimeString(System.currentTimeMillis())}")
             appendLine("Quick Tile State  : ${tileDiagnostics.lastState}")
@@ -1978,7 +1978,7 @@ fun SleekAboutTabContent(
                     )
 
                     Text(
-                        text = "Version 2.6",
+                        text = "Version ${BuildConfig.VERSION_NAME}",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )

@@ -69,6 +69,10 @@ This document serves as the canonical technical post-mortem and engineering anal
    - Created an atomic routine for `cam_mic` mode that executes both Parcel transactions in < 1ms or combined native service calls in ~15ms.
 6. **Instant In-Memory State Queries (0.05ms)**:
    - Reordered `getSensorsOffState()` to check `Settings.Global`/`Settings.Secure` first (0.05ms) and direct Binder queries second (< 1ms), and completely deleted the invalid `cmd sensor_privacy is-sensor-privacy-enabled` shell executions.
+7. **ContentObserver Broadcast Deduplication**:
+   - Filtered out duplicate observer callbacks in `SensorViewModel` by maintaining `lastObservedSensorOffState`. Redundant events generated when writing to both global and secure Settings tables no longer emit duplicate entries in the event log.
+8. **Dynamic Version Binding**:
+   - Replaced static version strings in telemetry export headers and the About screen with `BuildConfig.VERSION_NAME` to guarantee that exported diagnostics accurately reflect the installed APK version.
 
 ---
 - [v2.6.8 - Shizuku Post-Reboot Setup Latency & Tile Auto-Update Synchronization](#v268---shizuku-post-reboot-setup-latency--tile-auto-update-synchronization)

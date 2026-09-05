@@ -96,6 +96,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     private var observerJob: Job? = null
     private var activeRefreshJob: Job? = null
+    private var lastObservedSensorOffState: Boolean? = null
 
     private val contentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
@@ -103,10 +104,13 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             val context = getApplication<Application>().applicationContext
             observerJob?.cancel()
             observerJob = viewModelScope.launch(Dispatchers.IO) {
-                delay(60) // Debounce multiple rapid settings broadcasts
+                delay(80) // Debounce multiple rapid settings broadcasts
                 val isOff = ShizukuManager.getSensorsOffState(context)
-                addLog("Detected system sensor privacy change -> SensorsOff = $isOff", category = LogCategory.SYSTEM)
-                TileLogManager.logSystemEvent(context, "System Privacy State Change", "ContentObserver triggered | sensors_off = $isOff")
+                if (lastObservedSensorOffState != isOff) {
+                    lastObservedSensorOffState = isOff
+                    addLog("Detected system sensor privacy change -> SensorsOff = $isOff", category = LogCategory.SYSTEM)
+                    TileLogManager.logSystemEvent(context, "System Privacy State Change", "ContentObserver triggered | sensors_off = $isOff")
+                }
                 refreshState()
             }
         }
@@ -116,7 +120,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         val context = application.applicationContext
         TileLogManager.initialize(context)
         addLog("SensorsOff initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})", category = LogCategory.SYSTEM)
-        TileLogManager.logSystemEvent(context, "Engine Startup", "SensorsOff v2.0 initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
+        TileLogManager.logSystemEvent(context, "Engine Startup", "SensorsOff v${BuildConfig.VERSION_NAME} initialized on ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})")
 
         // Asynchronously load states and setup listeners without blocking Main Thread startup
         viewModelScope.launch(Dispatchers.IO) {

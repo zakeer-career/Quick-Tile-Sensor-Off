@@ -40,6 +40,11 @@ Changes:
   * Reordered getSensorsOffState to evaluate in-memory Settings provider (0.05ms) at Layer 0 and eliminated nonexistent shell commands.
 - SensorsOffTileService.kt:
   * Updated toggleChannel consumer to invoke setCamMicSensorState for cam_mic mode.
+- SensorViewModel.kt:
+  * Deduplicated ContentObserver broadcast events using state difference checking.
+  * Replaced hardcoded version string with dynamic BuildConfig.VERSION_NAME.
+- MainActivity.kt:
+  * Replaced hardcoded version strings with dynamic BuildConfig.VERSION_NAME in telemetry export headers and About dialog.
 - app/build.gradle.kts:
   * Incremented versionCode to 27 and versionName to 2.7.0.
 

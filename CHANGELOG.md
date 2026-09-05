@@ -41,7 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
    - **Zero-Process State Queries (`getSensorsOffState`)**: Prioritized instant in-memory `Settings.Global`/`Settings.Secure` queries (0.05ms) as Layer 0, followed by direct Binder Parcel queries (< 1ms). Completely eliminated invalid and slow shell executions (`cmd sensor_privacy is-sensor-privacy-enabled`).
 2. **`SensorsOffTileService.kt`**:
    - Updated `toggleChannel` worker loop to use `ShizukuManager.setCamMicSensorState()` when `cachedBlockMode == "cam_mic"`, halving execution time and eliminating sequential pileup.
-3. **`app/build.gradle.kts`**:
+3. **`SensorViewModel.kt`**:
+   - Deduplicated `ContentObserver` system log events by checking `lastObservedSensorOffState != isOff` before dispatching, preventing duplicate zero-delta entries from rapid successive broadcasts.
+   - Dynamic engine startup log incorporating `BuildConfig.VERSION_NAME`.
+4. **`MainActivity.kt`**:
+   - Replaced static version string in telemetry export headers and About dialog with `BuildConfig.VERSION_NAME`.
+5. **`app/build.gradle.kts`**:
    - Bumped `versionCode` to 27 and `versionName` to `"2.7.0"`.
 
 #### Telemetry & Verification
