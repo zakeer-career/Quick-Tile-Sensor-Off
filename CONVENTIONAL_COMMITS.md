@@ -11,6 +11,42 @@ Each commit entry includes:
 
 ---
 
+### [v2.6.8] - 2026-09-04
+
+```git
+feat(tile): auto-update Quick Settings tile on Shizuku setup and display waiting state
+
+Problem:
+After device reboot, Shizuku takes time to initialize and establish its binder connection. Before Shizuku setup completes:
+1. The Quick Settings tile lacked explicit feedback indicating that Shizuku is setting up.
+2. If the user pulled down the QS shade immediately after reboot, the tile remained unready even after Shizuku finished starting, requiring manual shade dismiss and reopen.
+3. No proactive background monitoring existed to invalidate SystemUI tile caches once the Shizuku daemon initialized.
+
+Root Cause:
+1. SensorsOffTileService.onStartListening() rendered an inactive tile and exited without launching an active coroutine to await Shizuku readiness.
+2. Shizuku's OnBinderReceivedListener notified TileService immediately upon binder socket creation before client permissions had finished syncing across the IPC boundary.
+3. SensorsOffBackgroundService lacked an asynchronous watcher to detect Shizuku daemon initialization in the background after boot.
+
+Changes:
+- SensorsOffTileService.kt:
+  * Implemented showWaitingForShizuku() setting tile.subtitle = "Waiting for Shizuku..." with inactive state and disabled icon.
+  * In onStartListening(), display "Waiting for Shizuku..." when privileges are absent and launch active listeningJob polling every 400ms to automatically update the tile to operational state immediately when Shizuku setup completes.
+  * In onClick(), show "Connecting to Shizuku...", await binder with a 1500ms grace period, and restore "Waiting for Shizuku..." if still unavailable.
+- ShizukuManager.kt:
+  * In binderReceivedListener, launch coroutine awaiting client permission sync (up to 3s) before invoking notifyTileServiceToUpdate().
+  * Added OnRequestPermissionResultListener to immediately refresh tile and service when permission is authorized.
+- SensorsOffBackgroundService.kt:
+  * Implemented startShizukuWatcher() to asynchronously monitor daemon startup for up to 5 minutes post-reboot.
+  * Updated buildStatusNotification() to display "Waiting for Shizuku..." with "SensorsOff will auto-activate when Shizuku setup completes".
+
+Verification:
+- Compile applet: Build succeeded cleanly.
+- Unit Tests: gradle :app:testDebugUnitTest passed (31 actionable tasks, 4 executed, 27 up-to-date).
+- Auto-update verified: Tile transitions from "Waiting for Shizuku..." to operational state within 400ms of Shizuku becoming available.
+```
+
+---
+
 ### [v2.6.7] - 2026-09-04
 
 ```git

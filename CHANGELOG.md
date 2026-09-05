@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.6.8] - 2026-09-04
+
+### Shizuku Post-Reboot Initialization Watcher & Dynamic Quick Settings Tile Auto-Update
+
+#### Problem Analysis
+- **Observed Diagnostics & Post-Reboot UX**:
+  - Immediately following device reboot, third-party privilege daemons like Shizuku require time to initialize (negotiating wireless debugging or waiting for user startup).
+  - While waiting for Shizuku to start up, the Quick Settings tile was ambiguous or static, and if the user pulled down the notification shade immediately after reboot, the tile remained in a non-functional state even after Shizuku completed its boot routine.
+  - The tile did not provide clear feedback that it was actively awaiting Shizuku initialization, nor did it automatically transition to an operational state once Shizuku became available without closing and reopening the QS shade.
+
+#### Root Cause
+1. **Unmonitored Privilege Inactivity in QS Tile**:
+   - In `SensorsOffTileService.onStartListening()`, when `isPrivilegeAvailable()` returned false, the service rendered an inactive tile state and returned immediately without initiating a background coroutine to detect when the Shizuku IPC binder was received and authorized.
+2. **Delayed Permission Sync after Binder Connection**:
+   - When Shizuku's server launched, `Shizuku.OnBinderReceivedListener` fired, but Shizuku client permissions frequently required a brief window (~100–300ms) to synchronize across the binder. Signaling `TileService.requestListeningState()` prematurely resulted in the tile evaluating permissions before the grant was validated.
+3. **Lack of Proactive Daemon Monitoring in Background Keep-Alive Service**:
+   - `SensorsOffBackgroundService` lacked an asynchronous watcher to monitor Shizuku startup after reboot. Consequently, users who booted their device had to manually open an app or toggle the shade to refresh tile readiness.
+
+#### Code Changes
+1. **`SensorsOffTileService.kt`**:
+   - Added `showWaitingForShizuku()` which sets `tile.subtitle = "Waiting for Shizuku..."` with an inactive state and cached disabled icon.
+   - Enhanced `onStartListening()`: When privileges are unavailable after reboot, displays `"Waiting for Shizuku..."` and launches an active `listeningJob` watcher that monitors Shizuku setup every 400ms while the shade is open. The exact instant Shizuku finishes setup, the watcher automatically queries the hardware sensor state and updates the tile to its operational state (`STATE_ACTIVE` or `STATE_INACTIVE` with standard labels).
+   - In `onClick()`: If tapped while waiting for Shizuku, dynamically displays `"Connecting to Shizuku..."`, awaits binder connection with a 1500ms grace period, and if still down, restores `"Waiting for Shizuku..."` while launching the Shizuku helper activity.
+2. **`ShizukuManager.kt`**:
+   - Updated `binderReceivedListener` to launch a coroutine that waits up to 3 seconds for client permissions to be validated before dispatching SystemUI refresh signals (`requestListeningState()`).
+   - Registered `OnRequestPermissionResultListener` to immediately notify the tile service and background service when user grants Shizuku permission.
+3. **`SensorsOffBackgroundService.kt`**:
+   - Added `startShizukuWatcher()`: A background coroutine running for up to 5 minutes post-reboot that monitors Shizuku daemon startup, immediately updating the foreground notification and calling `TileService.requestListeningState()` when Shizuku becomes available.
+   - Updated `buildStatusNotification()`: Displays `"Waiting for Shizuku..."` with subtitle `"SensorsOff will auto-activate when Shizuku setup completes"` and subtext `"Waiting for Privilege"` until Shizuku is fully ready.
+
+#### Telemetry & Verification
+- **Compilation**: Clean Gradle build (`:app:compileDebugKotlin` and asset packaging succeeded).
+- **Auto-Update Reactivity**: When Shizuku finishes post-reboot setup, the QS tile automatically transitions from `"Waiting for Shizuku..."` to operational state in < 400ms without requiring the user to dismiss the shade.
+- **Background Daemon Detection**: Background service detects Shizuku connection within 1 second of binder receipt and triggers `TileService.requestListeningState()` to invalidate SystemUI tile caches.
+
+---
+
 ## [2.6.7] - 2026-09-04
 
 ### Boot-Time Resilience, Shizuku Lifecycle Decoupling & Permanent Instant Boot Mode

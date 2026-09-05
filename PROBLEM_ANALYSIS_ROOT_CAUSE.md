@@ -6,6 +6,7 @@ This document serves as the canonical technical post-mortem and engineering anal
 
 ## Table of Contents
 
+- [v2.6.8 - Shizuku Post-Reboot Setup Latency & Tile Auto-Update Synchronization](#v268---shizuku-post-reboot-setup-latency--tile-auto-update-synchronization)
 - [v2.6.7 - Boot-Time Latency, Dead Shizuku Daemon & Permanent Instant Boot Mode](#v267---boot-time-latency-dead-shizuku-daemon--permanent-instant-boot-mode)
 - [v2.6.6 - Low-Level Binder Transaction Code Mismatches & Multi-Layer State Sync](#v266---low-level-binder-transaction-code-mismatches--multi-layer-state-sync)
 - [v2.6.5 - Android Hidden API Linking Denials (ISensorPrivacyManager)](#v265---android-hidden-api-linking-denials-isensorprivacymanager)
@@ -27,6 +28,39 @@ This document serves as the canonical technical post-mortem and engineering anal
 - [v2.1.1 - Experimental Raw AIDL Transact Failure and Premature Reversion](#v211---experimental-raw-aidl-transact-failure-and-premature-reversion)
 - [v2.1.0 - Subprocess Fork Latency and Synchronous SystemUI Rebinds](#v210---subprocess-fork-latency-and-synchronous-systemui-rebinds)
 - [v2.0.0 - Unprivileged Architecture Limitations and Lack of Telemetry](#v200---unprivileged-architecture-limitations-and-lack-of-telemetry)
+
+---
+
+### [v2.6.8] - Shizuku Post-Reboot Setup Latency & Tile Auto-Update Synchronization
+
+#### Problem Analysis
+- **Observed Diagnostics & Latency**:
+  1. Users noted that after a phone restart, Shizuku takes noticeable time (often 5–30 seconds, or until wireless debugging/ADB reconnects) to initialize its server and expose its IPC binder.
+  2. If the user pulled down the Android Quick Settings shade during this boot initialization phase, the SensorsOff tile showed an uninformative or static state.
+  3. Crucially, once Shizuku *did* finish setting up in the background, the Quick Settings tile failed to auto-update. It remained in a waiting/stale state until the user either dismissed and reopened the notification shade or opened the main application.
+  4. The user specifically identified this root cause: Shizuku takes time to setup after restarts, so before Shizuku is fully ready the tile should explicitly display "Waiting for Shizuku...", and as soon as Shizuku finishes setup, the tile must automatically update and start working immediately.
+
+#### Root Cause
+1. **Unmonitored Privilege State in `TileService.onStartListening()`**:
+   - When the QS shade is expanded, `onStartListening()` executes. If `isPrivilegeAvailable()` returned false, the method configured the tile and exited immediately without starting an active background monitoring loop. Consequently, if Shizuku completed its setup 3 seconds later while the QS shade was still visible, no event was scheduled to refresh the tile.
+2. **Premature `requestListeningState()` on Raw Binder Receipt**:
+   - `Shizuku.OnBinderReceivedListener` fires the instant the local binder socket connects to Shizuku's server. However, client permission verification (`Shizuku.checkSelfPermission()`) often takes an additional 100–300ms across the IPC boundary to synchronize grant state. Firing `requestListeningState()` immediately caused `onStartListening()` to read an unauthorized status before the permission check finished.
+3. **No Continuous Background Watcher Post-Reboot**:
+   - `SensorsOffBackgroundService` (started at boot by `BootCompletedReceiver`) did not actively monitor Shizuku startup after device boot. As a result, if the user didn't pull down the shade until minutes later, SystemUI still held stale tile metadata until triggered by an explicit update.
+
+#### Engineered Resolution & Impact
+1. **Explicit QS Tile "Waiting for Shizuku..." State**:
+   - Implemented `showWaitingForShizuku()` in `SensorsOffTileService`, displaying `tile.label = cachedDisplayLabel` ("Sensors Off"), `tile.subtitle = "Waiting for Shizuku..."`, `tile.state = Tile.STATE_INACTIVE`, and the cached inactive icon.
+2. **Active Real-Time Auto-Update Watcher in QS Tile**:
+   - In `SensorsOffTileService.onStartListening()`, if privileges are unavailable after reboot, the tile displays `"Waiting for Shizuku..."` and launches an active `listeningJob` watcher that polls Shizuku availability every 400ms while the shade remains open.
+   - The exact millisecond Shizuku finishes setup, the watcher automatically queries current hardware sensor privacy status via AIDL and transitions the tile to its operational state (`STATE_ACTIVE` / `STATE_INACTIVE` with standard user subtitles). The tile starts working immediately without requiring the user to dismiss the shade.
+3. **Grace Period on User Interaction**:
+   - In `onClick()`, if tapped while waiting for Shizuku, the tile displays `"Connecting to Shizuku..."` and allows up to 1500ms for in-flight binder negotiation to complete before falling back to opening the Shizuku manager helper.
+4. **Debounced & Authorized Binder Notification**:
+   - Updated `ShizukuManager.binderReceivedListener` to wait up to 3 seconds for client permission synchronization before dispatching `notifyTileServiceToUpdate()`.
+   - Added `OnRequestPermissionResultListener` to trigger instant SystemUI tile refreshes whenever permissions are granted.
+5. **Continuous Post-Reboot Background Watcher**:
+   - In `SensorsOffBackgroundService`, implemented `startShizukuWatcher()` running up to 5 minutes post-reboot. The moment Shizuku is detected online, it updates the persistent notification and calls `TileService.requestListeningState()`, guaranteeing the QS tile is 100% pre-warmed and ready before the user ever touches the screen.
 
 ---
 

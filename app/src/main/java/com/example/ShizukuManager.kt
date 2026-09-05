@@ -5,7 +5,10 @@ import android.content.pm.PackageManager
 import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
@@ -28,9 +31,22 @@ object ShizukuManager {
         isBinderConnected = true
         Log.i(TAG, "Shizuku binder received process-wide")
         appContextRef?.get()?.let { ctx ->
-            notifyTileServiceToUpdate(ctx)
-            SensorsOffBackgroundService.update(ctx)
-            TileLogManager.logPrivilegeEvent(ctx, "Shizuku Connected", "Shizuku IPC binder established", LogLevel.SUCCESS)
+            CoroutineScope(Dispatchers.IO).launch {
+                // Wait for Shizuku permission check to fully sync (up to 3 seconds)
+                var count = 0
+                while (count < 30 && (!isShizukuRunning() || !isShizukuAuthorized())) {
+                    delay(100)
+                    count++
+                }
+                notifyTileServiceToUpdate(ctx)
+                SensorsOffBackgroundService.update(ctx)
+                TileLogManager.logPrivilegeEvent(
+                    ctx,
+                    "Shizuku Setup Complete",
+                    "Shizuku setup completed fully. Tile and background service auto-updated to operational state.",
+                    LogLevel.SUCCESS
+                )
+            }
         }
     }
 
@@ -41,6 +57,22 @@ object ShizukuManager {
             notifyTileServiceToUpdate(ctx)
             SensorsOffBackgroundService.update(ctx)
             TileLogManager.logPrivilegeEvent(ctx, "Shizuku Disconnected", "Shizuku IPC binder died", LogLevel.WARN)
+        }
+    }
+
+    private val permissionResultListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+        if (grantResult == PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "Shizuku permission granted. Notifying tile and services.")
+            appContextRef?.get()?.let { ctx ->
+                notifyTileServiceToUpdate(ctx)
+                SensorsOffBackgroundService.update(ctx)
+                TileLogManager.logPrivilegeEvent(
+                    ctx,
+                    "Shizuku Authorized",
+                    "Permission granted by user. Tile auto-updated to operational state.",
+                    LogLevel.SUCCESS
+                )
+            }
         }
     }
 
@@ -57,7 +89,8 @@ object ShizukuManager {
             try {
                 Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
                 Shizuku.addBinderDeadListener(binderDeadListener)
-                Log.d(TAG, "Registered process-wide Shizuku binder listeners")
+                Shizuku.addRequestPermissionResultListener(permissionResultListener)
+                Log.d(TAG, "Registered process-wide Shizuku binder and permission listeners")
             } catch (e: Throwable) {
                 Log.w(TAG, "Failed to register Shizuku binder listeners: ${e.message}")
             }

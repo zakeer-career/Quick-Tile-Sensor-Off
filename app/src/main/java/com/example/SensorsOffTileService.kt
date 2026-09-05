@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -198,22 +200,59 @@ class SensorsOffTileService : TileService() {
         refreshTileImmediately()
     }
 
+    private fun showWaitingForShizuku() {
+        val tile = qsTile ?: return
+        tile.state = Tile.STATE_INACTIVE
+        tile.label = cachedDisplayLabel
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            tile.subtitle = "Waiting for Shizuku..."
+        }
+        cachedInactiveIcon?.let { tile.icon = it }
+        tile.updateTile()
+    }
+
     override fun onStartListening() {
         super.onStartListening()
-        val startTime = System.currentTimeMillis()
         listeningJob?.cancel()
 
-        // Verify privilege status. If Shizuku is dead after reboot, guide user immediately
+        // Verify privilege status. If Shizuku is setting up after reboot, show waiting status and auto-update
         val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
         if (!hasPrivilege) {
-            val tile = qsTile ?: return
-            tile.state = Tile.STATE_INACTIVE
-            tile.label = cachedDisplayLabel
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = "Tap: Start Shizuku"
+            showWaitingForShizuku()
+            TileLogManager.logTileEvent(
+                applicationContext,
+                "Tile Listening",
+                "Privilege service not ready yet. Displaying 'Waiting for Shizuku...' and starting auto-update watcher.",
+                LogLevel.INFO
+            )
+            // Active Auto-Update Watcher: While the notification shade is open,
+            // continuously watch for Shizuku setup completion and automatically update the tile
+            listeningJob = serviceScope.launch(Dispatchers.IO) {
+                var waitedMs = 0L
+                val maxWaitMs = 120_000L // Watch for up to 2 minutes while shade is open
+                while (isActive && waitedMs < maxWaitMs) {
+                    if (ShizukuManager.isPrivilegeAvailable(applicationContext)) {
+                        TileLogManager.logTileEvent(
+                            applicationContext,
+                            "Shizuku Ready",
+                            "Shizuku setup completed! Auto-updating tile to operational state.",
+                            LogLevel.SUCCESS
+                        )
+                        val isSensorsOff = if (cachedBlockMode == "cam_mic") {
+                            ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
+                                    ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                        } else {
+                            ShizukuManager.getSensorsOffState(applicationContext)
+                        }
+                        withContext(Dispatchers.Main) {
+                            updateTileState(isSensorsOff)
+                        }
+                        break
+                    }
+                    delay(400)
+                    waitedMs += 400
+                }
             }
-            cachedInactiveIcon?.let { tile.icon = it }
-            tile.updateTile()
             return
         }
 
@@ -258,14 +297,7 @@ class SensorsOffTileService : TileService() {
         try {
             val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
             if (!hasPrivilege) {
-                val tile = qsTile ?: return
-                tile.state = Tile.STATE_INACTIVE
-                tile.label = cachedDisplayLabel
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = "Tap: Start Shizuku"
-                }
-                cachedInactiveIcon?.let { tile.icon = it }
-                tile.updateTile()
+                showWaitingForShizuku()
                 return
             }
 
@@ -304,12 +336,17 @@ class SensorsOffTileService : TileService() {
             TileLogManager.logTileEvent(
                 applicationContext,
                 "QS Tile Tap Event",
-                "Touch detected while privileged service inactive. Awaiting Shizuku...",
+                "Touch detected while waiting for Shizuku. Attempting connection...",
                 LogLevel.INFO
             )
+            val tile = qsTile
+            if (tile != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                tile.subtitle = "Connecting to Shizuku..."
+                tile.updateTile()
+            }
             serviceScope.launch(Dispatchers.IO) {
-                // Await up to 1200ms in case Shizuku binder is currently negotiating after boot
-                val connected = ShizukuManager.awaitShizukuBinder(1200L)
+                // Await up to 1500ms in case Shizuku binder is currently negotiating after boot
+                val connected = ShizukuManager.awaitShizukuBinder(1500L)
                 if (connected) {
                     withContext(Dispatchers.Main) {
                         pendingTargetState = target
@@ -320,7 +357,7 @@ class SensorsOffTileService : TileService() {
                 } else {
                     withContext(Dispatchers.Main) {
                         pendingTargetState = null
-                        refreshTileImmediately()
+                        showWaitingForShizuku()
                         launchShizukuOrApp()
                     }
                 }

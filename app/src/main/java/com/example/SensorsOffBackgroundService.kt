@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Lightweight Foreground Keep-Alive Service for SensorsOff.
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 class SensorsOffBackgroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private var shizukuWatchJob: kotlinx.coroutines.Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -42,14 +44,18 @@ class SensorsOffBackgroundService : Service() {
         TileLogManager.initialize(applicationContext)
         ShizukuManager.initialize(applicationContext)
         createNotificationChannel()
+        startShizukuWatcher()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: ACTION_START
         Log.d(TAG, "onStartCommand action=$action")
 
+        startShizukuWatcher()
+
         when (action) {
             ACTION_STOP -> {
+                shizukuWatchJob?.cancel()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
@@ -92,9 +98,49 @@ class SensorsOffBackgroundService : Service() {
         return START_STICKY
     }
 
+    private fun startShizukuWatcher() {
+        if (ShizukuManager.isPrivilegeAvailable(applicationContext)) {
+            shizukuWatchJob?.cancel()
+            return
+        }
+        if (shizukuWatchJob?.isActive == true) return
+
+        shizukuWatchJob = serviceScope.launch(Dispatchers.IO) {
+            Log.d(TAG, "Starting Shizuku setup watcher in background service...")
+            var waitedMs = 0L
+            val maxWait = 300_000L // 5 minutes post-reboot
+            while (waitedMs < maxWait) {
+                if (ShizukuManager.isPrivilegeAvailable(applicationContext)) {
+                    Log.i(TAG, "Shizuku became available! Refreshing tile and notification.")
+                    withContext(Dispatchers.Main) {
+                        updateForegroundNotification()
+                    }
+                    try {
+                        TileService.requestListeningState(
+                            applicationContext,
+                            ComponentName(applicationContext, SensorsOffTileService::class.java)
+                        )
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Failed to requestListeningState: ${e.message}")
+                    }
+                    TileLogManager.logPrivilegeEvent(
+                        applicationContext,
+                        "Shizuku Auto-Detected",
+                        "Shizuku finished setting up in background. Tile auto-updated to operational state.",
+                        LogLevel.SUCCESS
+                    )
+                    break
+                }
+                kotlinx.coroutines.delay(1000)
+                waitedMs += 1000
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "SensorsOffBackgroundService destroyed")
+        shizukuWatchJob?.cancel()
         serviceScope.cancel()
     }
 
@@ -113,6 +159,7 @@ class SensorsOffBackgroundService : Service() {
     }
 
     private fun buildStatusNotification(): Notification {
+        val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
         val mode = ShizukuManager.getTileBlockMode(applicationContext)
         val isOff = if (mode == "cam_mic") {
             ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
@@ -122,8 +169,23 @@ class SensorsOffBackgroundService : Service() {
         }
         val modeTitle = if (mode == "cam_mic") "Camera & Mic" else "All Hardware Sensors"
 
-        val title = if (isOff) "Sensors Blocked" else "Sensors Allowed"
-        val subtitle = if (isOff) "$modeTitle are disabled" else "$modeTitle are active"
+        val title = if (!hasPrivilege) {
+            "Waiting for Shizuku..."
+        } else if (isOff) {
+            "Sensors Blocked"
+        } else {
+            "Sensors Allowed"
+        }
+
+        val subtitle = if (!hasPrivilege) {
+            "SensorsOff will auto-activate when Shizuku setup completes"
+        } else if (isOff) {
+            "$modeTitle are disabled"
+        } else {
+            "$modeTitle are active"
+        }
+
+        val subText = if (!hasPrivilege) "Waiting for Privilege" else "Keep-Alive Active"
 
         // Open app intent
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
@@ -147,19 +209,22 @@ class SensorsOffBackgroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val actionLabel = if (isOff) "Allow Sensors" else "Block Sensors"
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_sensors_off)
             .setContentTitle(title)
             .setContentText(subtitle)
-            .setSubText("Keep-Alive Active")
+            .setSubText(subText)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openAppPendingIntent)
-            .addAction(R.drawable.ic_sensors_off, actionLabel, togglePendingIntent)
-            .build()
+
+        if (hasPrivilege) {
+            val actionLabel = if (isOff) "Allow Sensors" else "Block Sensors"
+            builder.addAction(R.drawable.ic_sensors_off, actionLabel, togglePendingIntent)
+        }
+
+        return builder.build()
     }
 
     private fun createNotificationChannel() {
