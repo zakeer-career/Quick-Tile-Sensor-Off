@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -109,7 +110,7 @@ class SensorsOffBackgroundService : Service() {
             Log.d(TAG, "Starting Shizuku setup watcher in background service...")
             var waitedMs = 0L
             val maxWait = 300_000L // 5 minutes post-reboot
-            while (waitedMs < maxWait) {
+            while (isActive && waitedMs < maxWait) {
                 if (ShizukuManager.isPrivilegeAvailable(applicationContext)) {
                     Log.i(TAG, "Shizuku became available! Refreshing tile and notification.")
                     withContext(Dispatchers.Main) {

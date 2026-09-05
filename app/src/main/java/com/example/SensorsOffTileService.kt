@@ -124,14 +124,16 @@ class SensorsOffTileService : TileService() {
                     blockMode = cachedBlockMode
                 )
 
+                val confirmed = if (cachedBlockMode == "cam_mic") {
+                    val globalState = ShizukuManager.getSensorsOffState(applicationContext)
+                    ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
+                            ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
+                } else {
+                    ShizukuManager.getSensorsOffState(applicationContext)
+                }
+
                 withContext(Dispatchers.Main) {
                     pendingTargetState = null
-                    val confirmed = if (cachedBlockMode == "cam_mic") {
-                        ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                                ShizukuManager.getIndividualSensorState(applicationContext, "mic")
-                    } else {
-                        ShizukuManager.getSensorsOffState(applicationContext)
-                    }
                     updateTileState(confirmed)
                     SensorsOffBackgroundService.update(applicationContext)
                 }
@@ -239,8 +241,9 @@ class SensorsOffTileService : TileService() {
                             LogLevel.SUCCESS
                         )
                         val isSensorsOff = if (cachedBlockMode == "cam_mic") {
-                            ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                                    ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                            val globalState = ShizukuManager.getSensorsOffState(applicationContext)
+                            ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
+                                    ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
                         } else {
                             ShizukuManager.getSensorsOffState(applicationContext)
                         }
@@ -269,8 +272,9 @@ class SensorsOffTileService : TileService() {
         listeningJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 val isSensorsOff = if (cachedBlockMode == "cam_mic") {
-                    ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
-                            ShizukuManager.getIndividualSensorState(applicationContext, "mic")
+                    val globalState = ShizukuManager.getSensorsOffState(applicationContext)
+                    ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
+                            ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
                 } else {
                     ShizukuManager.getSensorsOffState(applicationContext)
                 }
@@ -325,9 +329,13 @@ class SensorsOffTileService : TileService() {
         // 1. Abort any background listening query
         listeningJob?.cancel()
 
-        // 2. Instant 0ms determination of target state
-        val currentTileState = qsTile?.state ?: Tile.STATE_INACTIVE
-        val isCurrentlyActive = (currentTileState == Tile.STATE_ACTIVE)
+        // 2. Instant 0ms determination of target state (flawlessly accounting for rapid in-flight clicks)
+        val now = System.currentTimeMillis()
+        val isCurrentlyActive = if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
+            pendingTargetState!!
+        } else {
+            (qsTile?.state ?: Tile.STATE_INACTIVE) == Tile.STATE_ACTIVE
+        }
         val target = !isCurrentlyActive
 
         // 3. Privilege availability check with graceful await & recovery

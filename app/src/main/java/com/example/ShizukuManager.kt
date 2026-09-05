@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Looper
 import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
@@ -305,6 +306,14 @@ object ShizukuManager {
 
         if (!hasSuBinary) {
             cachedRootAvailable = false
+            return false
+        }
+
+        // If invoked from the Main thread, do not block the UI thread waiting on a subprocess
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                isRootAvailable()
+            }
             return false
         }
 
