@@ -41,6 +41,7 @@ class SensorsOffBackgroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         Log.d(TAG, "SensorsOffBackgroundService created")
         TileLogManager.initialize(applicationContext)
         ShizukuManager.initialize(applicationContext)
@@ -146,6 +147,7 @@ class SensorsOffBackgroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isServiceRunning = false
         Log.d(TAG, "SensorsOffBackgroundService destroyed")
         shizukuWatchJob?.cancel()
         serviceScope.cancel()
@@ -261,6 +263,10 @@ class SensorsOffBackgroundService : Service() {
 
         private const val PREF_KEY_KEEP_ALIVE = "pref_keep_alive_service_enabled"
 
+        @Volatile
+        var isServiceRunning: Boolean = false
+            private set
+
         fun isKeepAliveEnabled(context: Context): Boolean {
             val prefs = context.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
             return prefs.getBoolean(PREF_KEY_KEEP_ALIVE, false)
@@ -292,30 +298,29 @@ class SensorsOffBackgroundService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, SensorsOffBackgroundService::class.java).apply {
-                action = ACTION_STOP
-            }
+            // Never call startService() with ACTION_STOP when the app is in the background,
+            // as Android 8.0+ (Oreo+) Background Service Limitations throw IllegalStateException:
+            // "Not allowed to start service ... app is in background".
+            // stopService() safely instructs the Android framework to destroy the service if running,
+            // with zero background start restrictions.
             try {
-                context.startService(intent)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to send stop action: ${e.message}")
-            }
-            try {
+                val intent = Intent(context, SensorsOffBackgroundService::class.java)
                 context.stopService(intent)
             } catch (e: Throwable) {
-                // ignore
+                Log.d(TAG, "stopService note: ${e.message}")
             }
+            isServiceRunning = false
         }
 
         fun update(context: Context) {
-            if (!isKeepAliveEnabled(context)) return
+            if (!isKeepAliveEnabled(context) || !isServiceRunning) return
             val intent = Intent(context, SensorsOffBackgroundService::class.java).apply {
                 action = ACTION_UPDATE
             }
             try {
                 context.startService(intent)
             } catch (e: Throwable) {
-                Log.w(TAG, "Failed to update notification: ${e.message}")
+                Log.d(TAG, "Failed to update notification: ${e.message}")
             }
         }
     }

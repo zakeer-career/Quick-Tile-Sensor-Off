@@ -6,6 +6,7 @@ This document serves as the canonical technical post-mortem and engineering anal
 
 ## Table of Contents
 
+- [v2.7.4 - Elimination of Background Service Start Restrictions on Android 8.0+](#v274---elimination-of-background-service-start-restrictions-on-android-80)
 - [v2.7.3 - Direct Binder Caching, Rapid-Click Coalescing & Cold-Start Latency Spike Elimination](#v273---direct-binder-caching-rapid-click-coalescing--cold-start-latency-spike-elimination)
 - [v2.7.2 - Restoration of Official AOSP SensorsOff Architecture: Zero Battery Drain, No Active Apps Listing & Pure On-Demand Tile](#v272---restoration-of-official-aosp-sensorsoff-architecture-zero-battery-drain-no-active-apps-listing--pure-on-demand-tile)
 - [v2.7.1 - Post-Reboot Tile State: Disabled STATE_UNAVAILABLE Mode until Shizuku Auto-Setup Completes](#v271---post-reboot-tile-state-disabled-state_unavailable-mode-until-shizuku-auto-setup-completes)
@@ -33,6 +34,30 @@ This document serves as the canonical technical post-mortem and engineering anal
 - [v2.1.1 - Experimental Raw AIDL Transact Failure and Premature Reversion](#v211---experimental-raw-aidl-transact-failure-and-premature-reversion)
 - [v2.1.0 - Subprocess Fork Latency and Synchronous SystemUI Rebinds](#v210---subprocess-fork-latency-and-synchronous-systemui-rebinds)
 - [v2.0.0 - Unprivileged Architecture Limitations and Lack of Telemetry](#v200---unprivileged-architecture-limitations-and-lack-of-telemetry)
+
+---
+
+### [v2.7.4] - Elimination of Background Service Start Restrictions on Android 8.0+
+
+#### Problem Analysis
+- **Observed User Experience & Logcat Errors**:
+  - The application logs reported:
+    ```
+    E/SensorsOffBgService: Failed to send stop action: Not allowed to start service Intent { act=com.example.action.STOP_KEEP_ALIVE xflg=0x4 cmp=com.aistudio.sensorsoff.pomujq/com.example.SensorsOffBackgroundService }: app is in background uid UidRecord{eaa40d9 u0a221 CEM bg:+1s6ms idle change:idle|cached|procstate|procadj procs:0 seq(18609,18548)} caps=--------
+    ```
+  - When the process was initialized in the background (e.g. during tile clicks or system broadcasts while the activity was closed), proactive calls to stop the background service caused an unhandled system restriction warning.
+
+#### Root Cause
+- Under Android 8.0+ (Oreo+) Background Service Limitations, calling `context.startService(...)` when the app is in the background is strictly forbidden and throws `IllegalStateException`.
+- In `SensorsOffBackgroundService.stop()`, the code was calling `context.startService(intent)` with `ACTION_STOP` to ask the service to self-terminate via `onStartCommand()`. While the app was cached in the background, Android prevented the service start before `onStartCommand()` could even be reached.
+- Furthermore, `SensorsOffBackgroundService.update()` attempted `context.startService(intent)` even when the service was not running.
+
+#### Engineered Resolution & Impact
+1. **Direct Framework Service Termination (`stopService`)**:
+   - Replaced `context.startService(ACTION_STOP)` in `SensorsOffBackgroundService.stop(context)` with `context.stopService(intent)`. Android's `stopService` does not suffer from background start limitations and directly stops the service via ActivityManager.
+2. **Lifecycle State Tracking**:
+   - Added `isServiceRunning: Boolean` in `SensorsOffBackgroundService` to track the exact lifecycle between `onCreate()` and `onDestroy()`.
+   - In `SensorsOffBackgroundService.update()`, added an early exit condition `if (!isKeepAliveEnabled(context) || !isServiceRunning) return`, eliminating unnecessary background start attempts when the service is dormant.
 
 ---
 

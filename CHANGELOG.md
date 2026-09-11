@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.7.4] - 2026-09-11
+
+### Elimination of Background Service Start Restrictions on Android 8.0+
+
+#### Problem Analysis
+- **Error Observed**:
+  - `E/SensorsOffBgService: Failed to send stop action: Not allowed to start service Intent { act=com.example.action.STOP_KEEP_ALIVE ... }: app is in background uid UidRecord{... CEM bg:... idle change:... procs:0}`
+- **Observed User Experience**:
+  - Whenever the application process was initialized in the background (such as during SystemUI Quick Settings tile interactions or broadcast events), the app attempted to ensure no background daemon was running by calling `SensorsOffBackgroundService.stop(context)`. Because `stop()` invoked `context.startService(intent)` with `ACTION_STOP` while the process was in background/cached state, Android 8.0+ (Oreo+) Background Service Limitations threw an `IllegalStateException`.
+
+#### Root Cause
+- Under Android 8.0+ background execution limits, calling `context.startService(...)` is prohibited unless the app is in the foreground, even if the intent's payload is only meant to request the service to stop itself (`ACTION_STOP`).
+- `context.stopService(...)` does NOT have this limitation and directly requests the system ActivityManager to terminate the service without throwing background execution exceptions. Furthermore, calling `startService` to deliver updates when the service was not even running was redundant.
+
+#### Code Changes
+1. **`SensorsOffBackgroundService.kt`**:
+   - Replaced `context.startService(ACTION_STOP)` in `SensorsOffBackgroundService.stop()` with direct `context.stopService(intent)`.
+   - Added `isServiceRunning: Boolean` state flag tracking service lifecycle between `onCreate()` and `onDestroy()`.
+   - In `SensorsOffBackgroundService.update()`, added an early return guard checking `isServiceRunning` so background updates are only dispatched if the service is actively running in foreground.
+2. **`app/build.gradle.kts`**:
+   - Bumped `versionCode` to 31 and `versionName` to `"2.7.4"`.
+
+#### Telemetry & Verification
+- No `IllegalStateException` or "Not allowed to start service" errors logged during background process transitions or tile interactions.
+- Full Gradle test suite (`:app:testDebugUnitTest`) passed successfully.
+
+---
+
 ## [2.7.3] - 2026-09-11
 
 ### Direct Binder Caching, Rapid-Click Coalescing & Cold-Start Latency Spike Elimination

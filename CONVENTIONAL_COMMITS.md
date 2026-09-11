@@ -11,6 +11,35 @@ Each commit entry includes:
 
 ---
 
+### [v2.7.4] - 2026-09-11
+
+```git
+fix(service): resolve background service start exception on Android 8.0+
+
+Problem:
+1. Logcat reported: "Failed to send stop action: Not allowed to start service Intent { act=com.example.action.STOP_KEEP_ALIVE ... }: app is in background uid ... CEM bg procs:0"
+2. When the app process initialized in background or during Quick Settings tile actions, stop() attempted startService() with ACTION_STOP, triggering Android's Background Service Limitations IllegalStateException.
+
+Root Cause:
+1. Under Android 8.0+ (Oreo+) background restrictions, calling context.startService() throws an IllegalStateException if the app is not in the foreground, even when sending a command to stop.
+2. context.stopService() bypasses background execution restrictions and safely commands the framework to stop the service.
+
+Changes:
+- SensorsOffBackgroundService.kt:
+  * Replaced context.startService(ACTION_STOP) with context.stopService(intent).
+  * Added @Volatile isServiceRunning state tracking across onCreate() and onDestroy().
+  * In update(), early exit if service is not currently running to avoid unnecessary background IPC attempts.
+- app/build.gradle.kts:
+  * Bumped versionCode to 31 and versionName to 2.7.4.
+
+Verification:
+- compile_applet: Build succeeded.
+- gradle :app:testDebugUnitTest: BUILD SUCCESSFUL (31 tasks executed).
+- Zero BackgroundServiceStartNotAllowedException / IllegalStateException.
+```
+
+---
+
 ### [v2.7.3] - 2026-09-11
 
 ```git
