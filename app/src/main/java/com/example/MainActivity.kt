@@ -2579,7 +2579,7 @@ fun SleekBackgroundKeepAliveCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Runs a lightweight persistent foreground service so Android and OEM task killers (HyperOS, MIUI, Samsung) never kill the app when swiped from Recents. Maintains Shizuku connection 24/7 for instant Quick Settings tile response, plus adds a status notification with a 1-tap toggle.",
+                text = "Official AOSP SensorsOff operates in 100% On-Demand mode with zero background daemons and zero battery consumption. Enabling keep-alive runs a foreground notification so aggressive OEM task-killers never kill the app, but Android 13/14 will list it under 'Active apps'.",
                 fontSize = 12.sp,
                 color = colors.textSecondary,
                 lineHeight = 17.sp

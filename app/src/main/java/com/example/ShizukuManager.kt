@@ -29,8 +29,12 @@ object ShizukuManager {
     @Volatile
     private var appContextRef: java.lang.ref.WeakReference<Context>? = null
 
+    @Volatile
+    private var cachedSensorPrivacyBinder: android.os.IBinder? = null
+
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         isBinderConnected = true
+        cachedSensorPrivacyBinder = null
         Log.i(TAG, "Shizuku binder received process-wide")
         appContextRef?.get()?.let { ctx ->
             CoroutineScope(Dispatchers.IO).launch {
@@ -55,6 +59,7 @@ object ShizukuManager {
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         isBinderConnected = false
+        cachedSensorPrivacyBinder = null
         Log.w(TAG, "Shizuku binder disconnected process-wide")
         appContextRef?.get()?.let { ctx ->
             notifyTileServiceToUpdate(ctx)
@@ -205,10 +210,16 @@ object ShizukuManager {
      * completely eliminating Android Hidden API linking errors.
      */
     fun getSensorPrivacyBinder(): android.os.IBinder? {
+        val existing = cachedSensorPrivacyBinder
+        if (existing != null && existing.isBinderAlive) {
+            return existing
+        }
         if (!isShizukuRunning() || !isShizukuAuthorized()) return null
         return try {
             val binder = SystemServiceHelper.getSystemService("sensor_privacy") ?: return null
-            ShizukuBinderWrapper(binder)
+            val wrapper = ShizukuBinderWrapper(binder)
+            cachedSensorPrivacyBinder = wrapper
+            wrapper
         } catch (e: Throwable) {
             Log.d(TAG, "Could not acquire sensor_privacy binder via Shizuku: ${e.message}")
             null

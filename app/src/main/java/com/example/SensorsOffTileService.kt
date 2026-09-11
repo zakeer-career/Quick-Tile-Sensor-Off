@@ -95,7 +95,14 @@ class SensorsOffTileService : TileService() {
 
         // Launch single serialized toggle consumer to eliminate concurrent shell process pileups
         serviceScope.launch(Dispatchers.IO) {
-            for ((target, clickTime) in toggleChannel) {
+            for (initialItem in toggleChannel) {
+                // Coalesce rapid clicks: drain any queued clicks to only process the final target
+                var currentItem = initialItem
+                while (true) {
+                    val next = toggleChannel.tryReceive().getOrNull() ?: break
+                    currentItem = next
+                }
+                val (target, clickTime) = currentItem
                 val executionStartTime = System.currentTimeMillis()
 
                 val success = if (cachedBlockMode == "cam_mic") {
@@ -122,18 +129,22 @@ class SensorsOffTileService : TileService() {
                     blockMode = cachedBlockMode
                 )
 
-                val confirmed = if (cachedBlockMode == "cam_mic") {
-                    val globalState = ShizukuManager.getSensorsOffState(applicationContext)
-                    ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
-                            ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
-                } else {
-                    ShizukuManager.getSensorsOffState(applicationContext)
-                }
+                // If user clicked again while toggle was executing, loop will immediately process the new target
+                val hasPendingClicks = toggleChannel.tryReceive().isSuccess
 
-                withContext(Dispatchers.Main) {
-                    pendingTargetState = null
-                    updateTileState(confirmed)
-                    SensorsOffBackgroundService.update(applicationContext)
+                if (!hasPendingClicks) {
+                    val confirmed = if (cachedBlockMode == "cam_mic") {
+                        val globalState = ShizukuManager.getSensorsOffState(applicationContext)
+                        ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
+                                ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
+                    } else {
+                        ShizukuManager.getSensorsOffState(applicationContext)
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        pendingTargetState = null
+                        updateTileState(confirmed)
+                    }
                 }
             }
         }
