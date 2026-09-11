@@ -17,9 +17,9 @@ class SensorsOffApp : Application() {
         try {
             TileLogManager.initialize(this)
             ShizukuManager.initialize(this)
-            if (SensorsOffBackgroundService.isKeepAliveEnabled(this)) {
-                SensorsOffBackgroundService.start(this)
-            }
+            // Ensure no foreground keep-alive service runs, keeping SensorsOff off the Android "Active apps" task manager
+            SensorsOffBackgroundService.setKeepAliveEnabled(this, false)
+            SensorsOffBackgroundService.stop(this)
         } catch (e: Throwable) {
             Log.e("SensorsOffApp", "Failed during application initialization", e)
         }

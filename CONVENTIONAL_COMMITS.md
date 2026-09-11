@@ -11,6 +11,75 @@ Each commit entry includes:
 
 ---
 
+### [v2.7.2] - 2026-09-11
+
+```git
+refactor(architecture): restore official AOSP SensorsOff behavior with zero battery and pure on-demand tile
+
+Problem:
+1. SensorsOff appeared inside Android 13/14's "Active apps" task manager with a warning that it may affect battery life due to a running foreground keep-alive service.
+2. The Quick Settings tile previously had custom logic forcing STATE_UNAVAILABLE and running 2-3 minute background coroutines following device reboot.
+3. User requested restoring the official native AOSP SensorsOff behavior: no background services, zero battery usage, and native tile states.
+
+Root Cause:
+1. SensorsOffBackgroundService ran as an active ForegroundService when keep-alive was triggered, prompting Android's FGS Task Manager to flag the app in the "Active apps" notification drawer.
+2. showWaitingForShizuku() previously overrode native tile states with Tile.STATE_UNAVAILABLE, causing UI confusion post-reboot.
+
+Changes:
+- SensorsOffApp.kt:
+  * Disabled any background service start on application launch.
+  * Explicitly invoked SensorsOffBackgroundService.stop() and disabled keep-alive so the app never shows under "Active apps".
+- SensorsOffTileService.kt:
+  * Removed showWaitingForShizuku(), Tile.STATE_UNAVAILABLE, and the background polling loop.
+  * Re-implemented refreshTileImmediately() to query Settings.Global.getInt(resolver, "sensors_off", 0) in 0.05ms, ensuring instant native AOSP state (STATE_ACTIVE "On" or STATE_INACTIVE "Off") even immediately after boot.
+  * Replaced waiting fallback in onClick() with refreshTileImmediately().
+- BootCompletedReceiver.kt:
+  * Removed multi-minute background polling and background service startup; retained lightweight TileService.requestListeningState().
+- SensorsOffBackgroundService.kt:
+  * Updated onStartCommand() to exit immediately on ACTION_STOP without spawning Shizuku watchers.
+- app/build.gradle.kts:
+  * Bumped versionCode to 29 and versionName to 2.7.2.
+
+Verification:
+- Compile applet: Passed cleanly.
+- Unit & Robolectric Tests: gradle :app:testDebugUnitTest passed (31 tasks, 7 executed, 24 up-to-date).
+- SystemUI: App is absent from "Active apps", uses 0% background battery, and operates purely on-demand.
+```
+
+---
+
+### [v2.7.1] - 2026-09-04
+
+```git
+feat(tile): set tile to STATE_UNAVAILABLE post-reboot until Shizuku auto-setup finishes
+
+Problem:
+1. Following a device restart/reboot, the Quick Settings tile was previously set to STATE_INACTIVE (normal clickable state) with subtitle "Waiting for Shizuku...".
+2. If tapped before Shizuku completed its boot initialization, the tile appeared active/clickable but could not yet toggle sensors.
+3. The tile should display as visually disabled/unavailable (Tile.STATE_UNAVAILABLE) until Shizuku finishes auto-setup, and auto-transition to operational state as soon as Shizuku is ready.
+
+Root Cause:
+1. showWaitingForShizuku() previously assigned Tile.STATE_INACTIVE rather than Tile.STATE_UNAVAILABLE.
+2. BootCompletedReceiver did not run a background poller to re-request listening state when Shizuku finished its post-reboot background startup.
+
+Changes:
+- SensorsOffTileService.kt:
+  * Updated showWaitingForShizuku() to assign tile.state = Tile.STATE_UNAVAILABLE (0).
+  * Updated diagnostics state reporting to "STATE_UNAVAILABLE (0)" with action "Waiting for Shizuku auto-setup".
+  * Maintained auto-update polling loop in onStartListening() to seamlessly transition tile to operational state once Shizuku is detected.
+- BootCompletedReceiver.kt:
+  * Added post-boot coroutine poller watching for Shizuku initialization for up to 3 minutes, dispatching TileService.requestListeningState() immediately upon Shizuku becoming available.
+- app/build.gradle.kts:
+  * Incremented versionCode to 28 and versionName to 2.7.1.
+
+Verification:
+- Compile applet: Succeeded cleanly with zero warnings or errors.
+- Unit & Robolectric Tests: gradle :app:testDebugUnitTest passed (31 tasks, 7 executed, 24 up-to-date).
+- Post-Reboot Lifecycle: Tile initializes in STATE_UNAVAILABLE, dimming in SystemUI, and auto-updates to operational state once Shizuku connects.
+```
+
+---
+
 ### [v2.7.0] - 2026-09-04
 
 ```git

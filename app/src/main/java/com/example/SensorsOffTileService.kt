@@ -200,62 +200,9 @@ class SensorsOffTileService : TileService() {
         refreshTileImmediately()
     }
 
-    private fun showWaitingForShizuku() {
-        val tile = qsTile ?: return
-        tile.state = Tile.STATE_INACTIVE
-        tile.label = cachedDisplayLabel
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = "Waiting for Shizuku..."
-        }
-        cachedInactiveIcon?.let { tile.icon = it }
-        tile.updateTile()
-    }
-
     override fun onStartListening() {
         super.onStartListening()
         listeningJob?.cancel()
-
-        // Verify privilege status. If Shizuku is setting up after reboot, show waiting status and auto-update
-        val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
-        if (!hasPrivilege) {
-            showWaitingForShizuku()
-            TileLogManager.logTileEvent(
-                applicationContext,
-                "Tile Listening",
-                "Privilege service not ready yet. Displaying 'Waiting for Shizuku...' and starting auto-update watcher.",
-                LogLevel.INFO
-            )
-            // Active Auto-Update Watcher: While the notification shade is open,
-            // continuously watch for Shizuku setup completion and automatically update the tile
-            listeningJob = serviceScope.launch(Dispatchers.IO) {
-                var waitedMs = 0L
-                val maxWaitMs = 120_000L // Watch for up to 2 minutes while shade is open
-                while (isActive && waitedMs < maxWaitMs) {
-                    if (ShizukuManager.isPrivilegeAvailable(applicationContext)) {
-                        TileLogManager.logTileEvent(
-                            applicationContext,
-                            "Shizuku Ready",
-                            "Shizuku setup completed! Auto-updating tile to operational state.",
-                            LogLevel.SUCCESS
-                        )
-                        val isSensorsOff = if (cachedBlockMode == "cam_mic") {
-                            val globalState = ShizukuManager.getSensorsOffState(applicationContext)
-                            ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
-                                    ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
-                        } else {
-                            ShizukuManager.getSensorsOffState(applicationContext)
-                        }
-                        withContext(Dispatchers.Main) {
-                            updateTileState(isSensorsOff)
-                        }
-                        break
-                    }
-                    delay(400)
-                    waitedMs += 400
-                }
-            }
-            return
-        }
 
         val now = System.currentTimeMillis()
         if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
@@ -263,10 +210,10 @@ class SensorsOffTileService : TileService() {
             return
         }
 
-        // 1. Instant 0ms refresh from in-memory cache
+        // 1. Instant 0ms refresh from system settings / in-memory cache
         refreshTileImmediately()
 
-        // 2. Ultra-fast asynchronous AIDL check (< 1ms on IO)
+        // 2. Ultra-fast asynchronous query (< 1ms on IO) to keep tile 100% in sync
         listeningJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 val isSensorsOff = if (cachedBlockMode == "cam_mic") {
@@ -297,21 +244,22 @@ class SensorsOffTileService : TileService() {
 
     private fun refreshTileImmediately() {
         try {
-            val hasPrivilege = ShizukuManager.isPrivilegeAvailable(applicationContext)
-            if (!hasPrivilege) {
-                showWaitingForShizuku()
-                return
-            }
-
             val now = System.currentTimeMillis()
             val isSensorsOff = if (pendingTargetState != null && now < pendingTargetExpiryTimeMs) {
                 pendingTargetState!!
             } else {
-                val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
-                if (cachedBlockMode == "cam_mic") {
-                    prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+                val globalVal = try {
+                    Settings.Global.getInt(applicationContext.contentResolver, "sensors_off", -1)
+                } catch (e: Throwable) { -1 }
+                if (globalVal != -1) {
+                    globalVal == 1
                 } else {
-                    prefs.getBoolean("sensors_off_enabled", false)
+                    val prefs = applicationContext.getSharedPreferences("sensors_off_prefs", Context.MODE_PRIVATE)
+                    if (cachedBlockMode == "cam_mic") {
+                        prefs.getBoolean("sensor_blocked_camera", false) || prefs.getBoolean("sensor_blocked_mic", false)
+                    } else {
+                        prefs.getBoolean("sensors_off_enabled", false)
+                    }
                 }
             }
             updateTileState(isSensorsOff)
@@ -363,7 +311,7 @@ class SensorsOffTileService : TileService() {
                 } else {
                     withContext(Dispatchers.Main) {
                         pendingTargetState = null
-                        showWaitingForShizuku()
+                        refreshTileImmediately()
                         launchShizukuOrApp()
                     }
                 }

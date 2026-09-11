@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.sensorsoff.pomujq"
     minSdk = 24
     targetSdk = 36
-    versionCode = 27
-    versionName = "2.7.0" 
+    versionCode = 29
+    versionName = "2.7.2" 
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

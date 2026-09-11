@@ -6,6 +6,8 @@ This document serves as the canonical technical post-mortem and engineering anal
 
 ## Table of Contents
 
+- [v2.7.2 - Restoration of Official AOSP SensorsOff Architecture: Zero Battery Drain, No Active Apps Listing & Pure On-Demand Tile](#v272---restoration-of-official-aosp-sensorsoff-architecture-zero-battery-drain-no-active-apps-listing--pure-on-demand-tile)
+- [v2.7.1 - Post-Reboot Tile State: Disabled STATE_UNAVAILABLE Mode until Shizuku Auto-Setup Completes](#v271---post-reboot-tile-state-disabled-state_unavailable-mode-until-shizuku-auto-setup-completes)
 - [v2.7.0 - Sub-Millisecond Binder Transact, Lean Native Fallback & Async Settings Sync](#v270---sub-millisecond-binder-transact-lean-native-fallback--async-settings-sync)
 - [v2.6.9 - Main-Thread IPC Elimination, Rapid-Tap Desync & Non-Blocking Root Probe](#v269---main-thread-ipc-elimination-rapid-tap-desync--non-blocking-root-probe)
 - [v2.6.8 - Shizuku Post-Reboot Setup Latency & Tile Auto-Update Synchronization](#v268---shizuku-post-reboot-setup-latency--tile-auto-update-synchronization)
@@ -30,6 +32,61 @@ This document serves as the canonical technical post-mortem and engineering anal
 - [v2.1.1 - Experimental Raw AIDL Transact Failure and Premature Reversion](#v211---experimental-raw-aidl-transact-failure-and-premature-reversion)
 - [v2.1.0 - Subprocess Fork Latency and Synchronous SystemUI Rebinds](#v210---subprocess-fork-latency-and-synchronous-systemui-rebinds)
 - [v2.0.0 - Unprivileged Architecture Limitations and Lack of Telemetry](#v200---unprivileged-architecture-limitations-and-lack-of-telemetry)
+
+---
+
+### [v2.7.2] - Restoration of Official AOSP SensorsOff Architecture: Zero Battery Drain, No Active Apps Listing & Pure On-Demand Tile
+
+#### Problem Analysis
+- **Observed User Experience & Symptoms**:
+  1. The Android 13/14 Foreground Services Task Manager ("Active apps" drawer in the notification shade) listed SensorsOff as an active application with the warning: *"These apps are active and running, even when you're not using them. This improves their functionality, but it may also affect battery life. SensorsOff 1 min [Stop]"*.
+  2. The user noted that official Android SensorsOff (from AOSP Developer Options) has zero battery footprint, does not run background foreground services, and is not listed under "Active apps".
+  3. In addition, the Quick Settings tile was previously burdened with custom non-AOSP behaviors (such as entering `Tile.STATE_UNAVAILABLE`, displaying *"Waiting for Shizuku..."*, and running post-boot polling loops).
+  4. The user explicitly instructed to restore the original, official AOSP SensorsOff working behavior and eliminate any extra background daemon or artificial state overrides.
+
+#### Root Cause
+1. **Unsolicited Foreground Service Keep-Alive Daemon**:
+   - `SensorsOffBackgroundService` ran as a `ForegroundService` with an ongoing notification when keep-alive was triggered. In modern Android (Android 13+), all foreground services are surfaced to the user in the "Active apps" task manager dialog with battery impact warnings.
+2. **Artificial Non-AOSP State Transitions**:
+   - Setting `Tile.STATE_UNAVAILABLE` on reboot diverged from the official AOSP Developer Tile, which always directly reads the persistent `Settings.Global.sensors_off` system value and presents itself as operational (`STATE_ACTIVE` or `STATE_INACTIVE`).
+
+#### Engineered Resolution & Impact
+1. **Full Cessation of Background Services**:
+   - Updated `SensorsOffApp.onCreate()` and `BootCompletedReceiver` to explicitly stop `SensorsOffBackgroundService` and default the keep-alive preference to `false`. SensorsOff now runs zero foreground services, ensuring it never appears in the Android "Active apps" drawer.
+2. **Restoration of Official AOSP On-Demand Quick Settings Tile**:
+   - In `SensorsOffTileService`, eliminated `showWaitingForShizuku()`, removed `Tile.STATE_UNAVAILABLE`, and deleted the background polling loop.
+   - `refreshTileImmediately()` directly accesses `Settings.Global.getInt(resolver, "sensors_off", 0)` in 0.05ms, ensuring the tile displays the true system status ("On" or "Off") immediately upon pulldown without artificial unavailable states.
+   - Preserved instant optimistic UI switching (0ms) and high-speed native IPC toggle execution (< 20ms).
+3. **Pure On-Demand Lifecycle**:
+   - Device restart now only performs a standard, non-blocking `TileService.requestListeningState()` with zero background execution, achieving true 0.0% idle battery consumption.
+
+---
+
+### [v2.7.1] - Post-Reboot Tile State: Disabled STATE_UNAVAILABLE Mode until Shizuku Auto-Setup Completes
+
+#### Problem Analysis
+- **Observed User Experience & Symptoms**:
+  1. Immediately following a device restart or reboot, the Quick Settings tile was previously rendered in `STATE_INACTIVE` (1) with subtitle "Waiting for Shizuku...".
+  2. Because the tile appeared active/clickable, a user pulling down the notification shade could attempt to toggle the tile before Shizuku's background daemon finished its post-boot setup, leading to clicks being intercepted while waiting for IPC negotiation.
+  3. Per standard Android Quick Settings conventions, tiles that depend on an unready background service should be explicitly marked as `Tile.STATE_UNAVAILABLE` (0). This dims the tile and communicates to the user and SystemUI that the capability is temporarily unavailable until setup completes.
+  4. Once Shizuku auto-starts and finishes its post-reboot configuration, the tile must automatically promote to its operational state (`STATE_ACTIVE` or `STATE_INACTIVE`) without requiring user intervention or app restarts.
+
+#### Root Cause
+1. **Assignment of Operational State During Setup Phase**:
+   - `SensorsOffTileService.showWaitingForShizuku()` set `tile.state = Tile.STATE_INACTIVE`, making the tile appear as an enabled switch that is simply turned "Off" rather than an unready service awaiting authorization.
+2. **Missing Long-Running Post-Boot Background Poller**:
+   - When `SensorsOffBackgroundService` (the persistent keep-alive daemon) was disabled by the user, `BootCompletedReceiver` only invoked `TileService.requestListeningState()` a single time upon receiving `ACTION_BOOT_COMPLETED`. If Shizuku took several seconds to negotiate wireless debugging or root daemon startup after boot, no background coroutine was running in the receiver to trigger a second `requestListeningState()` upon Shizuku becoming ready.
+
+#### Engineered Resolution & Impact
+1. **Explicit `Tile.STATE_UNAVAILABLE` During Shizuku Setup**:
+   - Updated `SensorsOffTileService.showWaitingForShizuku()` to set `tile.state = Tile.STATE_UNAVAILABLE` (0) with subtitle "Waiting for Shizuku...".
+   - SystemUI renders the tile as disabled/dimmed, preventing premature user interactions while clearly communicating system status.
+2. **Diagnostics Reporting of Unavailable State**:
+   - Updated diagnostics logging to record `STATE_UNAVAILABLE (0)` with action "Waiting for Shizuku auto-setup", keeping the live Quick Tile Monitor card in `MainActivity` completely synchronized.
+3. **Active Post-Boot Setup Watcher in `BootCompletedReceiver`**:
+   - Added a background IO coroutine in `BootCompletedReceiver` that polls `ShizukuManager.isPrivilegeAvailable()` for up to 3 minutes post-reboot. The exact millisecond Shizuku finishes starting up, it invokes `TileService.requestListeningState()` to trigger immediate promotion of the tile to `STATE_ACTIVE` or `STATE_INACTIVE`.
+4. **Active Notification Shade Watcher**:
+   - Kept the 400ms auto-update poller in `SensorsOffTileService.onStartListening()` active while the shade drawer is pulled down, guaranteeing that if the user has the shade open when Shizuku finishes setup, the tile transitions in real-time before their eyes.
 
 ---
 

@@ -37,10 +37,8 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 ComponentName(context, SensorsOffTileService::class.java)
             )
 
-            // 2. Start keep-alive daemon if enabled by user
-            if (SensorsOffBackgroundService.isKeepAliveEnabled(context)) {
-                SensorsOffBackgroundService.start(context)
-            }
+            // 2. Guarantee foreground service is stopped
+            SensorsOffBackgroundService.stop(context)
 
             // 3. If device is rooted and Shizuku is down, try auto-starting Shizuku daemon
             CoroutineScope(Dispatchers.IO).launch {

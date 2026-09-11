@@ -52,15 +52,21 @@ class SensorsOffBackgroundService : Service() {
         val action = intent?.action ?: ACTION_START
         Log.d(TAG, "onStartCommand action=$action")
 
+        if (action == ACTION_STOP) {
+            shizukuWatchJob?.cancel()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         startShizukuWatcher()
 
         when (action) {
-            ACTION_STOP -> {
-                shizukuWatchJob?.cancel()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                return START_NOT_STICKY
-            }
             ACTION_TOGGLE -> {
                 serviceScope.launch {
                     val mode = ShizukuManager.getTileBlockMode(applicationContext)
@@ -292,7 +298,12 @@ class SensorsOffBackgroundService : Service() {
             try {
                 context.startService(intent)
             } catch (e: Throwable) {
-                Log.e(TAG, "Failed to stop SensorsOffBackgroundService: ${e.message}")
+                Log.e(TAG, "Failed to send stop action: ${e.message}")
+            }
+            try {
+                context.stopService(intent)
+            } catch (e: Throwable) {
+                // ignore
             }
         }
 
