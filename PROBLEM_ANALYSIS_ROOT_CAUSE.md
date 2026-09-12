@@ -6,6 +6,7 @@ This document serves as the canonical technical post-mortem and engineering anal
 
 ## Table of Contents
 
+- [v2.7.5 - Active Tile Declaration, Channel Event-Preservation, Multi-User Isolation & Authoritative Hardware State Sync](#v275---active-tile-declaration-channel-event-preservation-multi-user-isolation--authoritative-hardware-state-sync)
 - [v2.7.4 - Elimination of Background Service Start Restrictions on Android 8.0+](#v274---elimination-of-background-service-start-restrictions-on-android-80)
 - [v2.7.3 - Direct Binder Caching, Rapid-Click Coalescing & Cold-Start Latency Spike Elimination](#v273---direct-binder-caching-rapid-click-coalescing--cold-start-latency-spike-elimination)
 - [v2.7.2 - Restoration of Official AOSP SensorsOff Architecture: Zero Battery Drain, No Active Apps Listing & Pure On-Demand Tile](#v272---restoration-of-official-aosp-sensorsoff-architecture-zero-battery-drain-no-active-apps-listing--pure-on-demand-tile)
@@ -34,6 +35,47 @@ This document serves as the canonical technical post-mortem and engineering anal
 - [v2.1.1 - Experimental Raw AIDL Transact Failure and Premature Reversion](#v211---experimental-raw-aidl-transact-failure-and-premature-reversion)
 - [v2.1.0 - Subprocess Fork Latency and Synchronous SystemUI Rebinds](#v210---subprocess-fork-latency-and-synchronous-systemui-rebinds)
 - [v2.0.0 - Unprivileged Architecture Limitations and Lack of Telemetry](#v200---unprivileged-architecture-limitations-and-lack-of-telemetry)
+
+---
+
+### [v2.7.5] - Active Tile Declaration, Channel Event-Preservation, Multi-User Isolation & Authoritative Hardware State Sync
+
+#### Problem Analysis
+- **Passive Tile SystemUI Polling Overhead**:
+  - `SensorsOffTileService` lacked the `android.service.quicksettings.ACTIVE_TILE` metadata declaration in `AndroidManifest.xml`. On Android 12+ (API 31+), SystemUI treats undeclared tiles as passive, rebinding to them periodically to query state and causing sluggish visual updates after QS panel expansion.
+- **Rapid Click Drop Bug**:
+  - Under fast consecutive clicks, an auxiliary `toggleChannel.tryReceive().isSuccess` check executed after completing the IPC write was draining and discarding pending items in the channel without executing them, causing the tile to miss the user's final tap intention.
+- **Root Detection Race Condition & Cold-Start Stalls**:
+  - In `ShizukuManager.isRootAvailable()`, checking root on the Main thread immediately returned `false` while queuing a background check. This conflated "detection in progress" (`UNKNOWN`) with "root not present" (`UNAVAILABLE`), causing early UI checks to report root unavailable.
+- **Single-User Hardcoding in Multi-User Environments**:
+  - `userId = 0` was hardcoded in `invokeDirectSensorPrivacyTransact`, `invokeDirectIndividualSensorTransact`, and shell commands, preventing proper operation when run in Android Work Profiles, secondary user accounts, or Android 15 Private Spaces.
+- **Getter Transaction Code in Setter Sequences**:
+  - `invokeDirectSensorPrivacyTransact` included code 8 in its fallback array. On Android 12+, code 8 is `isToggleSensorPrivacyEnabled` (a getter taking two arguments), which threw avoidable exceptions when invoked as a setter.
+- **Unsupported Individual Sensor False-Positives**:
+  - Calling `setIndividualSensorState` for sensors other than camera and microphone returned `true` if `WRITE_SECURE_SETTINGS` was present, despite Android's `SensorPrivacyManager` only supporting camera (2) and microphone (1).
+
+#### Root Cause
+1. **Missing Tile Service Contract**: Active mode requires explicit manifest opt-in via `<meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />`.
+2. **Channel Read Without Processing**: Calling `tryReceive()` after completing a transaction without processing its payload popped and discarded valid user toggle requests.
+3. **Binary Boolean Root State**: A binary nullable cache cannot distinguish between unprobed and confirmed unavailable states.
+4. **Hardcoded User Profile ID**: AIDL `setToggleSensorPrivacy` accepts `int userId`, which must derive dynamically from `Process.myUid() / 100000`.
+
+#### Engineered Resolution & Impact
+1. **Manifest Active Tile Declaration**:
+   - Added `ACTIVE_TILE = true` metadata to `SensorsOffTileService` in `AndroidManifest.xml`.
+2. **Channel Event Preservation**:
+   - Removed destructive post-execution `tryReceive()` call in `SensorsOffTileService.kt`. Rapid taps now coalesce during queueing but never discard unexecuted requests.
+3. **Tri-State Root State Engine**:
+   - Implemented `RootState` enum (`UNKNOWN`, `AVAILABLE`, `UNAVAILABLE`) and `refreshRootState()` in `ShizukuManager.kt`.
+   - Pre-warmed root status on `Dispatchers.IO` in `SensorsOffApp.onCreate()`.
+4. **Dynamic User Profile ID Resolution**:
+   - Implemented `getCurrentUserId()` computing `Process.myUid() / 100000` across all Parcel transactions and shell fallback commands.
+5. **AOSP Transaction Code Realignment**:
+   - Aligned transaction codes to exact AIDL specifications (code 9 for Android 12+, code 5 for Android 11, code 4 for Android 10; eliminated getter code 8).
+6. **Authoritative Hardware State Sync**:
+   - In `getSensorsOffState()`, prioritized direct Parcel Binder queries and native `SensorPrivacyManager` reflection over the Settings table fallback.
+7. **Strict Individual Sensor Validation**:
+   - Guarded `setIndividualSensorState`: immediately returns `false` for unsupported sensor IDs (`sensorCode == 0`), preventing false positives.
 
 ---
 

@@ -11,6 +11,41 @@ Each commit entry includes:
 
 ---
 
+### [v2.7.5] - 2026-09-11
+
+```git
+fix(tile): add active tile mode, preserve rapid clicks and support multi-user IPC
+
+Problem:
+1. SensorsOffTileService lacked ACTIVE_TILE metadata, leading to passive polling by SystemUI and delayed state updates on Android 12+.
+2. A residual tryReceive() check in the toggle loop drained and discarded pending click events queued during active transactions.
+3. Root detection on the Main thread returned false instead of distinguishing UNKNOWN pending status, triggering transient false negatives on cold start.
+4. Hardcoded userId = 0 in Binder transacts caused issues on secondary user profiles and work spaces.
+5. ISensorPrivacyManager transaction code sequences included getter code 8 in setter arrays on Android 12+.
+
+Root Cause:
+1. SystemUI expects android.service.quicksettings.ACTIVE_TILE=true for on-demand event-driven tiles.
+2. Channel tryReceive() without state reassignment popped and discarded queued user actions.
+3. Conflating unprobed state with unavailable state in a binary boolean cache causes race conditions.
+4. Android user profiles have distinct user IDs calculated via Process.myUid() / 100000.
+
+Changes:
+- AndroidManifest.xml: Added ACTIVE_TILE=true meta-data to SensorsOffTileService.
+- SensorsOffTileService.kt: Removed destructive tryReceive() that dropped rapid taps; guaranteed full execution of all user clicks.
+- ShizukuManager.kt: Added RootState enum, dynamic getCurrentUserId(), deduplicated auto-granting, aligned AIDL transaction codes, and prioritized authoritative hardware Binder queries in getSensorsOffState.
+- SensorsOffApp.kt & BootCompletedReceiver.kt: Pre-warmed root status on IO coroutine and respected user keep-alive settings.
+- SensorsOffBackgroundService.kt: Dispatched toggle execution and notification building to Dispatchers.IO.
+- ExampleInstrumentedTest.kt: Fixed package name assertion.
+- app/build.gradle.kts: Bumped versionCode to 32 and versionName to 2.7.5.
+
+Verification:
+- compile_applet: Succeeded.
+- gradle :app:testDebugUnitTest: Succeeded (BUILD SUCCESSFUL).
+- Zero event drops during rapid tile clicks.
+```
+
+---
+
 ### [v2.7.4] - 2026-09-11
 
 ```git

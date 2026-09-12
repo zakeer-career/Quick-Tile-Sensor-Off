@@ -2,6 +2,9 @@ package com.example
 
 import android.app.Application
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Custom Application class for SensorsOff.
@@ -17,9 +20,18 @@ class SensorsOffApp : Application() {
         try {
             TileLogManager.initialize(this)
             ShizukuManager.initialize(this)
-            // Ensure no foreground keep-alive service runs, keeping SensorsOff off the Android "Active apps" task manager
-            SensorsOffBackgroundService.setKeepAliveEnabled(this, false)
-            SensorsOffBackgroundService.stop(this)
+            
+            // Pre-warm root state asynchronously to prevent cold-start UI stalls or false-negatives
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                ShizukuManager.refreshRootState()
+            }
+
+            // Honor user preference: only run foreground keep-alive if explicitly enabled by user
+            if (SensorsOffBackgroundService.isKeepAliveEnabled(this)) {
+                SensorsOffBackgroundService.start(this)
+            } else {
+                SensorsOffBackgroundService.stop(this)
+            }
         } catch (e: Throwable) {
             Log.e("SensorsOffApp", "Failed during application initialization", e)
         }

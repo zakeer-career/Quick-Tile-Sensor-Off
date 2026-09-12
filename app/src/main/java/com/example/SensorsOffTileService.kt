@@ -129,22 +129,17 @@ class SensorsOffTileService : TileService() {
                     blockMode = cachedBlockMode
                 )
 
-                // If user clicked again while toggle was executing, loop will immediately process the new target
-                val hasPendingClicks = toggleChannel.tryReceive().isSuccess
+                val confirmed = if (cachedBlockMode == "cam_mic") {
+                    val globalState = ShizukuManager.getSensorsOffState(applicationContext)
+                    ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
+                            ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
+                } else {
+                    ShizukuManager.getSensorsOffState(applicationContext)
+                }
 
-                if (!hasPendingClicks) {
-                    val confirmed = if (cachedBlockMode == "cam_mic") {
-                        val globalState = ShizukuManager.getSensorsOffState(applicationContext)
-                        ShizukuManager.getIndividualSensorState(applicationContext, "camera", knownGlobalState = globalState) ||
-                                ShizukuManager.getIndividualSensorState(applicationContext, "mic", knownGlobalState = globalState)
-                    } else {
-                        ShizukuManager.getSensorsOffState(applicationContext)
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        pendingTargetState = null
-                        updateTileState(confirmed)
-                    }
+                withContext(Dispatchers.Main) {
+                    pendingTargetState = null
+                    updateTileState(confirmed)
                 }
             }
         }

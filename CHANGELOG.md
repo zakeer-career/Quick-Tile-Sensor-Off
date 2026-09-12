@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.7.5] - 2026-09-11
+
+### Active Tile Declaration, Channel Event-Preservation, Multi-User Isolation & Authoritative Hardware State Sync
+
+#### Problem Analysis
+- **Tile Manifest Deficiency**:
+  - `SensorsOffTileService` lacked the `<meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />` tag in `AndroidManifest.xml`, causing SystemUI on Android 12+ (AOSP and OEM derivatives) to treat the tile as a passive polling tile rather than an active-mode tile, resulting in slower listening updates and periodic rebind overhead.
+- **Rapid Click Desynchronization**:
+  - In `SensorsOffTileService.kt`, a residual `toggleChannel.tryReceive().isSuccess` check executed after hardware toggle completion erroneously consumed and discarded pending click events queued while the hardware transaction was executing, preventing user tap intentions from executing when clicking rapidly.
+- **Root State Indeterminacy & Cold-Start Race Conditions**:
+  - `ShizukuManager.isRootAvailable()` conflated an unprobed root state on the Main thread (`UNKNOWN`) with root being `UNAVAILABLE`, returning `false` prematurely and causing transient false-negative privilege checks during process cold starts.
+- **Multi-User Isolation Defect**:
+  - Direct Parcel Binder calls and shell fallback commands hardcoded `userId = 0`, causing incorrect user profile target isolation on work profiles, secondary users, and private spaces.
+- **Transaction Code Alignment & Fake Success Avoidance**:
+  - `invokeDirectSensorPrivacyTransact` included getter code 8 in setter transaction sequences on Android 12+, causing unnecessary exceptions in Parcel transact loops.
+  - `setIndividualSensorState` returned `true` for unsupported sensors (motion, gyro, proximity) or when only `WRITE_SECURE_SETTINGS` was present without actual hardware binder execution.
+
+#### Root Cause
+1. **Passive Tile Mode**: Android SystemUI requires `ACTIVE_TILE = true` meta-data to keep tile state cached and only rebind during explicit `requestListeningState()` or clicks.
+2. **Channel Event Drain Leak**: Calling `tryReceive()` after completing a transaction without processing its payload popped and discarded valid user toggle requests.
+3. **Binary Root State Logic**: A two-state boolean (`null` or boolean) cannot differentiate between a pending background probe on the Main thread and confirmed root unavailability.
+4. **Hardcoded User Profile ID**: AIDL `setToggleSensorPrivacy` accepts `int userId`, which must derive dynamically from `Process.myUid() / 100000`.
+
+#### Code Changes
+1. **`app/src/main/AndroidManifest.xml`**:
+   - Added `<meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />` to `SensorsOffTileService`.
+2. **`SensorsOffTileService.kt`**:
+   - Removed the post-execution `tryReceive()` drain call that discarded pending clicks, ensuring every queued user click is processed to completion.
+3. **`SensorsOffApp.kt` & `BootCompletedReceiver.kt`**:
+   - Pre-warmed root status on `Dispatchers.IO` at process start.
+   - Honored user preference for keep-alive service rather than unconditionally forcing it to false.
+4. **`ShizukuManager.kt`**:
+   - Introduced `RootState` enum (`UNKNOWN`, `AVAILABLE`, `UNAVAILABLE`) and `refreshRootState()` for non-blocking asynchronous root detection.
+   - Added `getCurrentUserId()` computing `Process.myUid() / 100000` to support multi-user and work profile environments.
+   - Deduplicated `autoGrantSecureSettings` using `AtomicBoolean` to prevent parallel process storms.
+   - Aligned AIDL transaction codes (9 for Android 12+, 5 for Android 11, 4 for Android 10; removed getter code 8 from setters).
+   - Guarded `setIndividualSensorState`: explicitly returns `false` for unsupported sensor IDs (`sensorCode == 0`), preventing false-positive status.
+   - Reordered `getSensorsOffState` to treat direct Parcel Binder query and native `SensorPrivacyManager` reflection as authoritative hardware truth before checking Settings table fallback.
+5. **`SensorsOffBackgroundService.kt`**:
+   - Moved `ACTION_TOGGLE` and notification building to `Dispatchers.IO`, preventing Main thread stalls during background service operations.
+6. **`app/src/androidTest/java/com/example/ExampleInstrumentedTest.kt`**:
+   - Updated stale package name assertion to `"com.aistudio.sensorsoff.pomujq"`.
+7. **`app/build.gradle.kts`**:
+   - Bumped `versionCode` to 32 and `versionName` to `"2.7.5"`.
+
+#### Telemetry & Verification
+- Unit test suite (`:app:testDebugUnitTest`) fully passed in 19s.
+- Clean compilation verified via `compile_applet`.
+- Tile active mode verified with seamless SystemUI click handling and zero discarded events.
+
+---
+
 ## [2.7.4] - 2026-09-11
 
 ### Elimination of Background Service Start Restrictions on Android 8.0+

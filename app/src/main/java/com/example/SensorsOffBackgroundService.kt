@@ -69,7 +69,7 @@ class SensorsOffBackgroundService : Service() {
 
         when (action) {
             ACTION_TOGGLE -> {
-                serviceScope.launch {
+                serviceScope.launch(Dispatchers.IO) {
                     val mode = ShizukuManager.getTileBlockMode(applicationContext)
                     val isCurrentlyOff = if (mode == "cam_mic") {
                         ShizukuManager.getIndividualSensorState(applicationContext, "camera") ||
@@ -79,8 +79,7 @@ class SensorsOffBackgroundService : Service() {
                     }
                     val targetState = !isCurrentlyOff
                     if (mode == "cam_mic") {
-                        ShizukuManager.setIndividualSensorState(applicationContext, "camera", targetState, skipNotify = true)
-                        ShizukuManager.setIndividualSensorState(applicationContext, "mic", targetState, skipNotify = true)
+                        ShizukuManager.setCamMicSensorState(applicationContext, targetState, skipNotify = true)
                     } else {
                         ShizukuManager.setSensorsOffState(applicationContext, targetState, skipNotify = true)
                     }
@@ -95,11 +94,11 @@ class SensorsOffBackgroundService : Service() {
                         Log.w(TAG, "Failed to notify tile: ${e.message}")
                     }
 
-                    updateForegroundNotification()
+                    updateForegroundNotificationAsync()
                 }
             }
             ACTION_UPDATE, ACTION_START -> {
-                updateForegroundNotification()
+                updateForegroundNotificationAsync()
             }
         }
 
@@ -120,9 +119,7 @@ class SensorsOffBackgroundService : Service() {
             while (isActive && waitedMs < maxWait) {
                 if (ShizukuManager.isPrivilegeAvailable(applicationContext)) {
                     Log.i(TAG, "Shizuku became available! Refreshing tile and notification.")
-                    withContext(Dispatchers.Main) {
-                        updateForegroundNotification()
-                    }
+                    updateForegroundNotificationAsync()
                     try {
                         TileService.requestListeningState(
                             applicationContext,
@@ -153,17 +150,21 @@ class SensorsOffBackgroundService : Service() {
         serviceScope.cancel()
     }
 
-    private fun updateForegroundNotification() {
-        val notification = buildStatusNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val foregroundServiceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            } else {
-                0
+    private fun updateForegroundNotificationAsync() {
+        serviceScope.launch(Dispatchers.IO) {
+            val notification = buildStatusNotification()
+            withContext(Dispatchers.Main) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val foregroundServiceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    } else {
+                        0
+                    }
+                    startForeground(NOTIFICATION_ID, notification, foregroundServiceType)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
             }
-            startForeground(NOTIFICATION_ID, notification, foregroundServiceType)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
